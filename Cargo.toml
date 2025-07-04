@@ -1,0 +1,56 @@
+[package]
+name = "sync_cron"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sync_cron"
+path = "src/main.rs"
+
+[dependencies]
+# Solana dependencies
+anchor-client = { version = "0.31.1", features = ["async"]}
+sync_contract = { version = "0.1.0", path = "../sync_contract/programs/sync_contract" }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Local KV Database
+sled = "0.34"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Cron scheduling
+tokio-cron-scheduler = "0.10"
+
+# Logging
+log = "0.4"
+env_logger = "0.9"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1.0", features = ["v4"] }
+
+# Configuration
+config = "0.14"
+
+# Base58 for Solana addresses
+bs58 = "0.5"
+
+# Path expansion
+shellexpand = "3.1"
+
+# Random number generation
+rand = "0.8"
+
+# HTTP client for Pinata
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+mime_guess = "2.0" 

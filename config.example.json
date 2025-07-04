@@ -1,0 +1,64 @@
+{
+  "solana_rpc_url": "https://api.devnet.solana.com",
+  "database_path": "./kv_store",
+  "min_daily_transactions": 80,
+  "max_daily_transactions": 120,
+  "min_user_key_expiry_seconds": 7884000,
+  "max_user_key_expiry_seconds": 15768000,
+  "user_key_pool_size": 100,
+  "high_rating_percentage": 0.8,
+  "cron_schedule_in_minutes": 15,
+  "solana_config": {
+    "keypair_file": "your_keypair_path_here",
+    "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
+    "commitment": "confirmed",
+    "agents": [
+      "4R1pgPbsWDsBagE3W3efVGAYTbThg9dRCxpHBs8CNGpBa1wCbSQVCuxN2eCWqKX9sEQeJG6TKZ8476SM3vtP5z2g",
+      "34rEHHiaZFQkrrR4az27pRKiZ6G2Yw9ihcRE8cfHc9Y2vLuJwAjv5aRgkwxBmcEBhQJNaak6AcinBoVQx1JdctDP",
+      "4bNLtmYKjbd3ZJEVYBhMMazxzPZUV8WDwF64zCcJQMZLwWC1EajaAr2nhqKweaq9T2doeAjDG8uoKnLQrBodCbiw",
+      "4tBqzWD5D2cRq5M9qw1R256TTGJkiMazaz9GbWEVuhk6RAJcqVQnvcB4kYfFZ4HhQTbyXQ74LP4rHe3E2bEcJFpz",
+      "3temuTTjjsr1GPUpsLoDZqNQ5QB6eLxd7Cb6CYeKga2afD1DBFYvv92tSaagbDNkgWnnU7yfJVkBoVJhyHo6HruE"
+    ],
+    "categories_supported": {
+      "technology": [
+        "ai",
+        "blockchain",
+        "software",
+        "hardware",
+        "mobile"
+      ],
+      "science": [
+        "physics",
+        "chemistry",
+        "biology",
+        "mathematics",
+        "research"
+      ],
+      "business": [
+        "finance",
+        "marketing",
+        "strategy",
+        "management",
+        "consulting"
+      ],
+      "education": [
+        "teaching",
+        "learning",
+        "curriculum",
+        "assessment",
+        "training"
+      ],
+      "health": [
+        "medicine",
+        "wellness",
+        "nutrition",
+        "fitness",
+        "mental"
+      ]
+    }
+  },
+  "pinata_config": {
+    "jwt_token": "<your_jwt_token_here>",
+    "gateway_url": "<your_gateway_url_here>"
+  }
+} 
