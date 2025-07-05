@@ -45,12 +45,16 @@ pub struct AccountConfig {
 impl AppConfig {
     pub fn load() -> Result<Self> {
         if let Ok(config) = Self::load_from_file() {
+            log::info!("📄 Configuration loaded from file");
             config.validate_categories()?;
+            log::info!("✅ Category validation passed");
             return Ok(config);
         }
 
+        log::info!("🔄 Loading configuration from environment variables");
         let config = Self::load_from_env()?;
         config.validate_categories()?;
+        log::info!("✅ Category validation passed");
         Ok(config)
     }
 
@@ -59,6 +63,12 @@ impl AppConfig {
         // Get the size limits from sync_contract constants
         let primary_category_size = sync_contract::types::PRIMARY_CATEGORY_SIZE;
         let secondary_category_size = sync_contract::types::SECONDARY_CATEGORY_SIZE;
+
+        log::info!("🔍 Validating {} primary categories against size limits (primary: {} bytes, secondary: {} bytes)", 
+            self.solana_config.categories_supported.len(), 
+            primary_category_size, 
+            secondary_category_size
+        );
 
         for (primary_category, secondary_categories) in &self.solana_config.categories_supported {
             // Check primary category size
@@ -117,6 +127,8 @@ impl AppConfig {
         // Select a random secondary category
         let secondary_category = &secondary_categories[rng.gen_range(0..secondary_categories.len())];
         
+        log::debug!("🎯 Selected random categories: Primary='{}', Secondary='{}'", primary_category, secondary_category);
+        
         Ok((primary_category.clone(), secondary_category.clone()))
     }
 
@@ -130,8 +142,10 @@ impl AppConfig {
             )));
         }
 
+        log::debug!("📖 Reading config file: {}", config_path);
         let content = fs::read_to_string(&config_path)?;
         let config: AppConfig = serde_json::from_str(&content)?;
+        log::debug!("✅ Config file parsed successfully");
         Ok(config)
     }
 
@@ -208,6 +222,7 @@ impl AppConfig {
         // Create default categories if not provided via environment
         let mut categories_supported = HashMap::new();
         categories_supported.insert("general".to_string(), vec!["misc".to_string()]);
+        log::debug!("🏷️ Created default categories: general -> misc");
 
         Ok(AppConfig {
             solana_rpc_url,
@@ -231,6 +246,8 @@ impl AppConfig {
     }
 
     pub fn save_example() -> Result<()> {
+        log::info!("📝 Creating example configuration...");
+        
         let mut categories_supported = HashMap::new();
         categories_supported.insert("technology".to_string(), vec![
             "ai".to_string(),
@@ -247,6 +264,8 @@ impl AppConfig {
             "marketing".to_string(),
             "strategy".to_string(),
         ]);
+        
+        log::debug!("🏷️ Added {} example category groups", categories_supported.len());
 
         let example_config = AppConfig {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
@@ -275,6 +294,7 @@ impl AppConfig {
 
         let json = serde_json::to_string_pretty(&example_config)?;
         fs::write("config.example.json", json)?;
+        log::info!("✅ Example configuration saved to config.example.json");
         Ok(())
     }
 } 

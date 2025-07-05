@@ -76,7 +76,7 @@ impl Database {
 
     pub async fn migrate(&self) -> Result<()> {
         // No migrations needed for KV store - it's schema-less
-        log::info!("KV database initialized (no migrations needed)");
+        log::info!("💾 KV database initialized (no migrations needed)");
         Ok(())
     }
 
@@ -130,7 +130,7 @@ impl Database {
         // Store the target for this date
         self.set_daily_target(date, target).await?;
         
-        log::info!("Generated new daily target for {}: {} (range: {}-{})", date, target, min_target, max_target);
+        log::info!("🎯 Generated new daily target for {}: {} (range: {}-{})", date, target, min_target, max_target);
         
         Ok(target)
     }
@@ -278,7 +278,7 @@ impl Database {
 
         // Check if the selected key is expired
         if selected_key.is_expired() {
-            log::info!("Selected user key {} is expired, replacing with new key", selected_key.pubkey);
+            log::info!("⏰ Selected user key {} is expired, replacing with new key", selected_key.pubkey);
             
             // Remove the expired key
             self.remove_user_key(&selected_key.id).await?;
@@ -295,7 +295,7 @@ impl Database {
         key_to_use.mark_used();
         self.update_user_key(&key_to_use).await?;
         
-        log::info!("Using existing user key: {} (expires: {})", key_to_use.pubkey, key_to_use.expires_at);
+        log::info!("🔑 Using existing user key: {} (expires: {})", key_to_use.pubkey, key_to_use.expires_at);
         
         Ok(key_to_use)
     }
@@ -304,30 +304,30 @@ impl Database {
         let current_keys = self.get_user_key_pool().await?;
         let current_size = current_keys.len();
         
-        log::info!("Current user key pool size: {}, target size: {}", current_size, target_size);
+        log::info!("📊 Current user key pool size: {}, target size: {}", current_size, target_size);
 
         if current_size < target_size as usize {
             let keys_to_create = target_size as usize - current_size;
-            log::info!("Creating {} new user keys to reach target pool size", keys_to_create);
+            log::info!("🔧 Creating {} new user keys to reach target pool size", keys_to_create);
 
             for i in 0..keys_to_create {
                 let new_key = self.create_new_user_key(min_expiry_seconds, max_expiry_seconds).await?;
                 self.add_user_key(new_key).await?;
-                log::info!("Created user key {}/{}", i + 1, keys_to_create);
+                log::info!("✅ Created user key {}/{}", i + 1, keys_to_create);
             }
         } else if current_size > target_size as usize {
             let keys_to_remove = current_size - target_size as usize;
-            log::info!("Removing {} excess user keys to reach target pool size", keys_to_remove);
+            log::info!("🗑️ Removing {} excess user keys to reach target pool size", keys_to_remove);
 
             // Remove oldest keys first
             for i in 0..keys_to_remove {
                 if let Some(key_to_remove) = current_keys.get(i) {
                     self.remove_user_key(&key_to_remove.id).await?;
-                    log::info!("Removed excess user key: {}", key_to_remove.pubkey);
+                    log::info!("❌ Removed excess user key: {}", key_to_remove.pubkey);
                 }
             }
         } else {
-            log::info!("User key pool is already at target size");
+            log::info!("✅ User key pool is already at target size");
         }
 
         Ok(())
@@ -339,7 +339,7 @@ impl Database {
         self.db.insert(&key, serialized)?;
         self.db.flush_async().await?;
         
-        log::info!("Added user key to pool: {} (expires: {})", user_key.pubkey, user_key.expires_at);
+        log::info!("➕ Added user key to pool: {} (expires: {})", user_key.pubkey, user_key.expires_at);
         
         Ok(())
     }
@@ -366,10 +366,10 @@ impl Database {
         for key in user_keys {
             if key.is_expired() {
                 if let Err(e) = self.remove_user_key(&key.id).await {
-                    log::warn!("Failed to remove expired user key {}: {}", key.id, e);
+                    log::warn!("⚠️ Failed to remove expired user key {}: {}", key.id, e);
                 } else {
                     deleted_count += 1;
-                    log::info!("Removed expired user key: {}", key.pubkey);
+                    log::info!("🗑️ Removed expired user key: {}", key.pubkey);
                 }
             }
         }
@@ -406,7 +406,7 @@ impl Database {
         
         let user_key = UserKeyRecord::new(pubkey, private_key, expires_at);
         
-        log::info!("Created new user key: {} (expires in {} seconds)", user_key.pubkey, expiry_seconds);
+        log::info!("🔑 Created new user key: {} (expires in {} seconds)", user_key.pubkey, expiry_seconds);
         
         Ok(user_key)
     }

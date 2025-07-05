@@ -49,7 +49,7 @@ impl SolanaClient {
             CommitmentConfig::confirmed(),
         );
 
-        log::info!("Initialized SolanaClient with {} agent keypairs", agents.len());
+        log::info!("🌐 Initialized SolanaClient with {} agent keypairs", agents.len());
 
         Self {
             rpc_client,
@@ -88,7 +88,7 @@ impl SolanaClient {
         // Send and confirm transaction
         self.rpc_client.send_and_confirm_transaction(&transaction)?;
         
-        log::info!("Transferred {} lamports from {} to {}", amount, from.pubkey(), to);
+        log::info!("💸 Transferred {} lamports from {} to {}", amount, from.pubkey(), to);
         
         Ok(())
     }
@@ -100,10 +100,10 @@ impl SolanaClient {
         
         if balance < MIN_BALANCE_LAMPORTS {
             let funding_amount = MIN_BALANCE_LAMPORTS * 2; // Fund with 0.02 SOL to avoid frequent funding
-            self.transfer_funds(master_keypair, user_pubkey, funding_amount)?;
-            log::info!("Funded user {} with {} lamports (balance was {})", user_pubkey, funding_amount, balance);
+                    self.transfer_funds(master_keypair, user_pubkey, funding_amount)?;
+        log::info!("💰 Funded user {} with {} lamports (balance was {})", user_pubkey, funding_amount, balance);
         } else {
-            log::info!("User {} balance {} lamports is sufficient (>= {})", user_pubkey, balance, MIN_BALANCE_LAMPORTS);
+            log::info!("✅ User {} balance {} lamports is sufficient (>= {})", user_pubkey, balance, MIN_BALANCE_LAMPORTS);
         }
         
         Ok(())
@@ -117,9 +117,9 @@ impl SolanaClient {
         
         if balance < MIN_BALANCE_LAMPORTS {
             self.transfer_funds(master_keypair, agent_pubkey, AGENT_FUNDING_AMOUNT)?;
-            log::info!("Funded agent {} with {} lamports (balance was {})", agent_pubkey, AGENT_FUNDING_AMOUNT, balance);
+            log::info!("💰 Funded agent {} with {} lamports (balance was {})", agent_pubkey, AGENT_FUNDING_AMOUNT, balance);
         } else {
-            log::info!("Agent {} balance {} lamports is sufficient (>= {})", agent_pubkey, balance, MIN_BALANCE_LAMPORTS);
+            log::info!("✅ Agent {} balance {} lamports is sufficient (>= {})", agent_pubkey, balance, MIN_BALANCE_LAMPORTS);
         }
         
         Ok(())
@@ -141,7 +141,7 @@ impl SolanaClient {
             );
         } else {
             log::info!(
-                "Master keypair balance: {} SOL ({} lamports)",
+                "💰 Master keypair balance: {} SOL ({} lamports)",
                 master_balance as f64 / 1_000_000_000.0,
                 master_balance
             );
@@ -155,7 +155,7 @@ impl SolanaClient {
 
         let (file_name, data) = self.generate_random_file_name_and_data()?;
         let upload_result = self.pinata_client.upload_bytes(data, &file_name, None).await?;
-        log::info!("Uploaded file to Pinata: {}", upload_result.public_url);
+        log::info!("📁 Uploaded file to Pinata: {}", upload_result.public_url);
 
         let (data_submission, _) = Pubkey::find_program_address(
             &[b"sync_program".as_ref(), b"data_submission".as_ref(), keccak::hash(upload_result.public_url.as_bytes()).as_ref()],
@@ -177,7 +177,7 @@ impl SolanaClient {
 
         // Get random categories for the transaction
         let (primary_category, secondary_category) = self.app_config.get_random_categories()?;
-        log::info!("Selected categories - Primary: '{}', Secondary: '{}'", primary_category, secondary_category);
+        log::info!("🎯 Selected categories - Primary: '{}', Secondary: '{}'", primary_category, secondary_category);
 
         // Submit data transaction - waits for confirmation
         let submitdata_signature = program
@@ -195,11 +195,11 @@ impl SolanaClient {
             .payer(&user)
             .send().await?;
 
-        log::info!("User {} submitted data to blockchain, tx hash: {}", user.pubkey(), submitdata_signature.to_string());
+        log::info!("🚀 User {} submitted data to blockchain, tx hash: {}", user.pubkey(), submitdata_signature.to_string());
 
         // Choose random agent from available agents and send rate data for the same file
         let agent = self.get_random_agent().unwrap();
-        log::info!("Chose agent: {}", agent.pubkey());
+        log::info!("🎲 Chose agent: {}", agent.pubkey());
 
         // Fund agent only if balance is below 0.01 SOL
         self.fund_agent_if_needed(&master_keypair, &agent.pubkey()).await?;
@@ -210,7 +210,7 @@ impl SolanaClient {
         );
 
         let random_rating = self.generate_random_rating();
-        log::info!("Generated random rating: {} by agent: {}", random_rating, agent.pubkey());
+        log::info!("💎 Generated random rating: {} by agent: {}", random_rating, agent.pubkey());
 
         // Rate data transaction - waits for confirmation  
         let rate_data_signature = program
@@ -228,7 +228,7 @@ impl SolanaClient {
             .payer(&agent)
             .send().await?;
 
-        log::info!("Agent rated data, tx hash: {}", rate_data_signature.to_string());
+        log::info!("✅ Agent rated data, tx hash: {}", rate_data_signature.to_string());
 
         // Both transactions are confirmed when we reach this point
         Ok(TransactionResult {
@@ -266,7 +266,7 @@ impl SolanaClient {
     // Deprecated: kept for backward compatibility
     pub fn load_keypair_static(path: &str) -> Result<Keypair> {
         let expanded_path = shellexpand::tilde(path);
-        log::info!("Loading keypair from: {}", expanded_path);
+        log::info!("🔑 Loading keypair from: {}", expanded_path);
         let keypair_bytes = std::fs::read(&*expanded_path)?;
         let keypair: Vec<u8> = serde_json::from_slice(&keypair_bytes)?;
         
@@ -339,11 +339,11 @@ impl SolanaClient {
         for (index, private_key) in private_keys.iter().enumerate() {
             match Self::load_keypair_from_private_key_static(private_key) {
                 Ok(keypair) => {
-                    log::info!("Loaded agent keypair #{}: {}", index + 1, keypair.pubkey());
+                    log::info!("🔑 Loaded agent keypair #{}: {}", index + 1, keypair.pubkey());
                     agents.push(keypair);
                 }
                 Err(e) => {
-                    log::warn!("Failed to load agent keypair #{}: {}", index + 1, e);
+                    log::warn!("❌ Failed to load agent keypair #{}: {}", index + 1, e);
                     // Continue loading other agents even if one fails
                 }
             }
@@ -357,11 +357,11 @@ impl SolanaClient {
         for path in paths {
             match Self::load_keypair_static(path) {
                 Ok(keypair) => {
-                    log::info!("Loaded agent keypair from: {}", path);
+                    log::info!("🔑 Loaded agent keypair from: {}", path);
                     agents.push(keypair);
                 }
                 Err(e) => {
-                    log::warn!("Failed to load agent keypair from {}: {}", path, e);
+                    log::warn!("❌ Failed to load agent keypair from {}: {}", path, e);
                     // Continue loading other agents even if one fails
                 }
             }

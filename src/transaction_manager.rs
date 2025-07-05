@@ -27,7 +27,7 @@ impl TransactionManager {
 
     /// New method for random transaction processing throughout the day
     pub async fn process_random_transactions(&self) -> Result<()> {
-        log::info!("Checking for random transaction opportunity...");
+        log::info!("🔍 Checking for random transaction opportunity...");
 
         // Get today's date
         let today = Utc::now().format("%Y-%m-%d").to_string();
@@ -41,12 +41,12 @@ impl TransactionManager {
 
         // Check current daily transaction count
         let current_count = self.database.get_daily_transaction_count().await?;
-        log::info!("Current daily transaction count: {}/{}", current_count, daily_target);
+        log::info!("📊 Current daily transaction count: {}/{}", current_count, daily_target);
 
         // Check if we've reached the daily target
         if current_count >= daily_target as i64 {
             log::info!(
-                "Daily transaction target ({}) already reached ({}). Skipping...",
+                "✅ Daily transaction target ({}) already reached ({}). Skipping...",
                 daily_target, current_count
             );
             return Ok(());
@@ -63,28 +63,28 @@ impl TransactionManager {
         let random_value: f64 = rand::thread_rng().gen();
         
         log::info!(
-            "Transaction probability: {:.2}%, random value: {:.2}%", 
+            "🎲 Transaction probability: {:.2}%, random value: {:.2}%", 
             probability * 100.0, 
             random_value * 100.0
         );
 
         if random_value < probability {
-            log::info!("Randomly selected to send transaction now!");
+            log::info!("🎯 Randomly selected to send transaction now!");
             
             match self.send_single_transaction().await {
                 Ok(tx_result) => {
-                    log::info!("Random transactions sent successfully: {}", tx_result.signatures.join(", "));
+                    log::info!("✅ Random transactions sent successfully: {}", tx_result.signatures.join(", "));
                     
                     if let Err(e) = self.database.insert_transaction(tx_result).await {
-                        log::error!("Failed to record transaction in database: {}", e);
+                        log::error!("❌ Failed to record transaction in database: {}", e);
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to send random transactions: {}", e);
+                    log::error!("❌ Failed to send random transactions: {}", e);
                 }
             }
         } else {
-            log::info!("Skipping transaction this cycle (random selection)");
+            log::info!("⏭️ Skipping transaction this cycle (random selection)");
         }
 
         // Update daily transaction count and log statistics
@@ -161,7 +161,7 @@ impl TransactionManager {
 
     /// Original method for backward compatibility and manual triggering
     pub async fn process_daily_transactions(&self) -> Result<()> {
-        log::info!("Processing daily transactions...");
+        log::info!("🔄 Processing daily transactions...");
 
         // Get today's date
         let today = Utc::now().format("%Y-%m-%d").to_string();
@@ -175,7 +175,7 @@ impl TransactionManager {
 
         // Check current daily transaction count
         let current_count = self.database.get_daily_transaction_count().await?;
-        log::info!("Current daily transaction count: {}/{}", current_count, daily_target);
+        log::info!("📊 Current daily transaction count: {}/{}", current_count, daily_target);
 
         // Check if we've reached the daily target
         if current_count >= daily_target as i64 {

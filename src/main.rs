@@ -21,36 +21,36 @@ async fn main() -> Result<()> {
     // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    log::info!("Starting Solana Sync Cron Job...");
+    log::info!("🚀 Starting Solana Sync Cron Job...");
 
     // Load configuration
     let config = AppConfig::load()?;
-    log::info!("Configuration loaded successfully");
+    log::info!("✅ Configuration loaded successfully");
 
     // Initialize database
     let database = Database::new(&config.database_path).await?;
     database.migrate().await?;
-    log::info!("KV database initialized");
+    log::info!("💾 KV database initialized");
 
     // Initialize user key pool
-    log::info!("Initializing user key pool...");
+    log::info!("🔄 Initializing user key pool...");
     database.ensure_pool_size(
         config.user_key_pool_size,
         config.min_user_key_expiry_seconds,
         config.max_user_key_expiry_seconds
     ).await?;
-    log::info!("User key pool initialized with {} keys", config.user_key_pool_size);
+    log::info!("🔑 User key pool initialized with {} keys", config.user_key_pool_size);
 
     let pinata_client = PinataClient::new(config.pinata_config.jwt_token.clone(), config.pinata_config.gateway_url.clone()).expect("Pinata client must initialize");
-    log::info!("Pinata client initialized");
+    log::info!("📁 Pinata client initialized");
 
     // Load agent keypairs from configuration
     let agents = SolanaClient::load_agents_from_private_keys(&config.solana_config.agents);
-    log::info!("Loaded {} agent keypairs", agents.len());
+    log::info!("👥 Loaded {} agent keypairs", agents.len());
 
     // Initialize Solana client with loaded agents
     let solana_client = SolanaClient::new(&config.solana_rpc_url, config.solana_config.clone(), pinata_client, agents, database.clone(), config.clone());
-    log::info!("Solana client initialized");
+    log::info!("🌐 Solana client initialized");
 
     // Create transaction manager
     let transaction_manager = Arc::new(TransactionManager::new(
@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
         None => "TBD".to_string(),
     };
 
-    log::info!("Random transaction scheduler started (every {} minutes, daily range: {}-{}, today's target: {})", 
+    log::info!("⏰ Random transaction scheduler started (every {} minutes, daily range: {}-{}, today's target: {})", 
         config.cron_schedule_in_minutes,
         config.min_daily_transactions, 
         config.max_daily_transactions,
@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
     // Keep the application running
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
 
-    log::info!("Shutting down...");
+    log::info!("🛑 Shutting down...");
     scheduler.shutdown().await?;
 
     Ok(())

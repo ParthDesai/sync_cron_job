@@ -77,7 +77,7 @@ impl PinataClient {
                     .to_string()
             });
 
-        log::info!("Uploading file '{}' ({} bytes) to Pinata public IPFS network", filename, data.len());
+        log::info!("📤 Uploading file '{}' ({} bytes) to Pinata public IPFS network", filename, data.len());
 
         // Create multipart form
         let part = Part::bytes(data)
@@ -98,7 +98,7 @@ impl PinataClient {
             .send()
             .await
             .map_err(|e| {
-                log::error!("Upload request failed: {}", e);
+                log::error!("❌ Upload request failed: {}", e);
                 SyncCronError::Network(format!("Upload request failed: {}", e))
             })?;
 
@@ -109,7 +109,7 @@ impl PinataClient {
             .map_err(|e| SyncCronError::Network(format!("Failed to read response: {}", e)))?;
 
         if !status.is_success() {
-            log::error!("Pinata upload failed with status {}: {}", status, response_text);
+            log::error!("⛔ Pinata upload failed with status {}: {}", status, response_text);
             return Err(SyncCronError::Network(format!(
                 "Upload failed with status {}: {}",
                 status, response_text
@@ -119,13 +119,13 @@ impl PinataClient {
         // Parse the response
         let upload_response_wrapper: PinataUploadResponseWrapper = serde_json::from_str(&response_text)
             .map_err(|e| {
-                log::error!("Failed to parse Pinata response: {} with an error: {}", response_text, e);
+                log::error!("🔍 Failed to parse Pinata response: {} with an error: {}", response_text, e);
                 SyncCronError::Network(format!("Failed to parse response: {}", e))
             })?;
 
         let upload_response = upload_response_wrapper.data;
 
-        log::info!("Successfully uploaded file to Pinata IPFS with CID: {}", upload_response.cid);
+        log::info!("✅ Successfully uploaded file to Pinata IPFS with CID: {}", upload_response.cid);
 
         // Create the result with various URL formats
         let result = PinataUploadResult {
