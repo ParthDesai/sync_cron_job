@@ -13,8 +13,11 @@ A Rust-based cron job application that interacts with Solana smart contracts on 
 - **Solana Integration**: Full Solana blockchain integration with transaction confirmation tracking
 - **IPFS Integration**: Built-in Pinata IPFS support for data storage
 - **Flexible Configuration**: JSON-based configuration with environment variable support
-- **Comprehensive Logging**: Detailed logging for monitoring and debugging
+- **Enhanced Logging**: Comprehensive logging with Unicode symbols for better readability and monitoring
 - **Transaction Status Tracking**: Real-time monitoring of transaction confirmations
+- **Balance Monitoring**: Automatic balance checking and warnings for master keypairs
+- **Category Management**: Dynamic category selection with size validation
+- **Automatic Funding**: Smart funding of user and agent accounts when balances are low
 
 ## Prerequisites
 
@@ -37,7 +40,7 @@ cargo build --release
 3. Set up your configuration:
 ```bash
 cp config.example.json config.json
-# Edit config.json with your settings
+# Edit config.json with your settings specifically agent keys and pinata configuration
 ```
 
 ## How Random Scheduling Works
@@ -69,18 +72,18 @@ Create a `config.json` file based on `config.example.json`:
 
 ```json
 {
-  "solana_rpc_url": "https://api.mainnet-beta.solana.com",
+  "solana_rpc_url": "https://api.devnet.solana.com",
   "database_path": "./kv_store",
   "min_daily_transactions": 80,
   "max_daily_transactions": 120,
-  "min_user_key_expiry_seconds": 3600,
-  "max_user_key_expiry_seconds": 86400,
+  "min_user_key_expiry_seconds": 13140000,
+  "max_user_key_expiry_seconds": 15768000,
   "user_key_pool_size": 100,
   "high_rating_percentage": 0.8,
-  "cron_schedule_in_minutes": 15,
+  "cron_schedule_in_minutes": 1,
   "solana_config": {
-    "keypair_file": "YOUR_BASE58_PRIVATE_KEY_HERE",
-    "program_id": "YOUR_PROGRAM_ID_HERE",
+    "keypair_file": "<your_keypair_path_here>",
+    "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
     "commitment": "confirmed",
     "agents": [
       "YOUR_AGENT_PRIVATE_KEY_HERE"
@@ -89,23 +92,43 @@ Create a `config.json` file based on `config.example.json`:
       "technology": [
         "ai",
         "blockchain",
-        "software"
+        "software",
+        "hardware",
+        "mobile"
       ],
       "science": [
         "physics",
         "chemistry",
-        "biology"
+        "biology",
+        "mathematics",
+        "research"
       ],
       "business": [
         "finance",
         "marketing",
-        "strategy"
+        "strategy",
+        "management",
+        "consulting"
+      ],
+      "education": [
+        "teaching",
+        "learning",
+        "curriculum",
+        "assessment",
+        "training"
+      ],
+      "health": [
+        "medicine",
+        "wellness",
+        "nutrition",
+        "fitness",
+        "mental"
       ]
     }
   },
   "pinata_config": {
-    "jwt_token": "your_pinata_jwt_token_here",
-    "gateway_url": "https://gateway.pinata.cloud"
+    "jwt_token": "<your_jwt_token_here>",
+    "gateway_url": "<your_gateway_url_here>"
   }
 }
 ```
@@ -115,17 +138,17 @@ Create a `config.json` file based on `config.example.json`:
 Alternatively, configure using environment variables:
 
 ```bash
-export SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
+export SOLANA_RPC_URL="https://api.devnet.solana.com"
 export DATABASE_PATH="./kv_store"
 export MIN_DAILY_TRANSACTIONS="80"
 export MAX_DAILY_TRANSACTIONS="120"
-export MIN_USER_KEY_EXPIRY_SECONDS="3600"
-export MAX_USER_KEY_EXPIRY_SECONDS="86400"
+export MIN_USER_KEY_EXPIRY_SECONDS="13140000"
+export MAX_USER_KEY_EXPIRY_SECONDS="15768000"
 export USER_KEY_POOL_SIZE="100"
 export HIGH_RATING_PERCENTAGE="0.8"
-export CRON_SCHEDULE_IN_MINUTES="15"
+export CRON_SCHEDULE_IN_MINUTES="1"
 export KEYPAIR_FILE="YOUR_BASE58_PRIVATE_KEY_HERE"
-export PROGRAM_ID="YOUR_PROGRAM_ID"
+export PROGRAM_ID="HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
 export COMMITMENT="confirmed"
 export SOLANA_AGENTS="AGENT_PRIVATE_KEY_1,AGENT_PRIVATE_KEY_2"
 export PINATA_JWT_TOKEN="your_pinata_jwt_token_here"
@@ -134,20 +157,21 @@ export PINATA_GATEWAY_URL="https://gateway.pinata.cloud"
 
 ### Configuration Parameters
 
-- **solana_rpc_url**: Solana RPC endpoint URL
+- **solana_rpc_url**: Solana RPC endpoint URL (devnet/mainnet)
 - **database_path**: Path to local KV database directory
 - **min_daily_transactions**: Minimum daily transaction target
 - **max_daily_transactions**: Maximum daily transaction target
-- **min_user_key_expiry_seconds**: Minimum expiry time for user keys (seconds)
-- **max_user_key_expiry_seconds**: Maximum expiry time for user keys (seconds)
+- **min_user_key_expiry_seconds**: Minimum expiry time for user keys (seconds, ~152 days default)
+- **max_user_key_expiry_seconds**: Maximum expiry time for user keys (seconds, ~182 days default)
 - **user_key_pool_size**: Number of user keys to maintain in the pool
-- **high_rating_percentage**: Percentage of transactions that should have high ratings
-- **cron_schedule_in_minutes**: Interval between transaction checks (minutes)
-- **keypair_file**: Base58-encoded private key for main wallet
+- **high_rating_percentage**: Percentage of transactions that should have high ratings (0.0-1.0)
+- **cron_schedule_in_minutes**: Interval between transaction checks (1-60 minutes)
+- **keypair_file**: Base58-encoded private key for main wallet (master keypair)
 - **program_id**: Target Solana program public key
 - **commitment**: Transaction commitment level (confirmed, finalized)
 - **agents**: Array of Base58-encoded private keys for agent wallets
 - **categories_supported**: Mapping of primary categories to their secondary categories (nested under solana_config)
+- **pinata_config**: IPFS configuration for Pinata service (JWT token and gateway URL)
 
 ## Categories Configuration
 
@@ -190,6 +214,56 @@ The example configuration includes categories for:
 - **Business**: finance, marketing, strategy, management, consulting
 - **Education**: teaching, learning, curriculum, assessment, training
 - **Health**: medicine, wellness, nutrition, fitness, mental
+
+## Balance Monitoring
+
+The application includes automatic balance monitoring for wallet security and operational continuity:
+
+### Master Keypair Balance Monitoring
+- **Warning Threshold**: 0.5 SOL minimum balance
+- **Automatic Alerts**: Logs warnings when balance falls below threshold
+- **Balance Display**: Shows current balance in both SOL and lamports
+- **Monitoring Frequency**: Checked before each transaction cycle
+
+### Automatic Funding
+- **User Account Funding**: Automatically funds user accounts with 0.02 SOL when balance drops below 0.01 SOL
+- **Agent Account Funding**: Funds agent accounts with 0.1 SOL when balance drops below 0.01 SOL
+- **Smart Funding**: Only funds when necessary to minimize transaction costs
+
+### Balance Logging
+All balance operations are logged with clear indicators:
+- 💰 Funding operations
+- ⚠️ Low balance warnings
+- ✅ Sufficient balance confirmations
+
+## Enhanced Logging with Unicode Symbols
+
+The application uses Unicode symbols throughout its logging system for improved readability and quick visual identification:
+
+### Symbol Categories
+- **🚀 Transactions**: Transaction submissions and confirmations
+- **💰 Financial**: Balance checks, funding operations, transfers
+- **🔑 Security**: Keypair operations, user key management
+- **🎯 Operations**: Category selection, targeting, probability calculations
+- **📊 Statistics**: Daily stats, pool statistics, progress tracking
+- **✅ Success**: Successful operations and confirmations
+- **❌ Errors**: Failed operations and error conditions
+- **⚠️ Warnings**: Important alerts and notifications
+- **🔄 Processing**: Ongoing operations and state changes
+- **📁 Files**: IPFS uploads and file operations
+
+### Example Log Output
+```
+INFO 🚀 Starting Solana Sync Cron Job...
+INFO ✅ Configuration loaded successfully
+INFO 💾 KV database initialized
+INFO 🔑 User key pool initialized with 100 keys
+INFO 🌐 Solana client initialized
+INFO 🎯 Selected categories - Primary: 'technology', Secondary: 'blockchain'
+INFO 💰 Master keypair balance: 1.25 SOL (1250000000 lamports)
+INFO 🎲 Transaction probability: 18.75%, random value: 23.45%
+INFO ⏭️ Skipping transaction this cycle (random selection)
+```
 
 ## User Key Pool Management
 
@@ -440,35 +514,56 @@ Value: {
 
 ## Logging
 
-The application provides comprehensive logging:
-- Random probability calculations
-- Transaction submission and confirmation
-- Daily target generation and tracking
-- User key pool management
-- Category selection for each transaction
-- Time-based adjustments
-- Error handling and recovery
-- Database operations
-- Cron schedule execution
+The application provides comprehensive logging with Unicode symbols for enhanced readability:
 
-Example log output:
+### Log Categories
+- **🚀 Startup & Initialization**: Application startup, configuration loading, client initialization
+- **🎯 Transaction Processing**: Daily target generation, category selection, probability calculations
+- **💰 Financial Operations**: Balance monitoring, funding operations, SOL transfers
+- **🔑 Key Management**: User key pool operations, keypair loading, expiry management
+- **📊 Statistics & Analytics**: Daily stats, pool statistics, transaction counts
+- **✅ Success Operations**: Successful transactions, confirmations, completions
+- **❌ Error Handling**: Failed operations, error recovery, warnings
+- **🔄 Processing**: Ongoing operations, state changes, cleanup tasks
+- **📁 File Operations**: IPFS uploads, data generation, storage operations
+- **⏰ Scheduling**: Cron operations, timing, intervals
+
+### Detailed Log Output Example
 ```
-INFO Generated new daily target for 2024-01-01: 95 (range: 80-120)
-INFO User key pool stats: 100 total, 87 available, 13 expired
-INFO Selected categories - Primary: 'technology', Secondary: 'blockchain'
-INFO Probability calculation: 5 remaining, 32 cycles left (15 min intervals), base: 0.156, time_mult: 1.20, final: 0.188
-INFO Transaction probability: 18.75%, random value: 23.45%
-INFO Skipping transaction this cycle (random selection)
+INFO 🚀 Starting Solana Sync Cron Job...
+INFO ✅ Configuration loaded successfully
+INFO 💾 KV database initialized
+INFO 🔑 User key pool initialized with 100 keys
+INFO 🎯 Generated new daily target for 2024-01-01: 95 (range: 80-120)
+INFO 📊 Current daily transaction count: 12/95
+INFO 🎯 Selected categories - Primary: 'technology', Secondary: 'blockchain'
+INFO 💰 Master keypair balance: 1.25 SOL (1250000000 lamports)
+INFO 🎲 Transaction probability: 18.75%, random value: 23.45%
+INFO ⏭️ Skipping transaction this cycle (random selection)
+INFO 📊 User key pool stats: 100 total, 87 available, 13 expired
+INFO 🚀 User ABC123... submitted data to blockchain, tx hash: XYZ789...
+INFO 💎 Generated random rating: 85 by agent: DEF456...
+INFO ✅ Agent rated data, tx hash: GHI012...
 ```
+
+### Log Levels
+- **INFO**: Normal operations and status updates
+- **DEBUG**: Detailed debugging information (enable with `RUST_LOG=debug`)
+- **WARN**: Important warnings and notifications
+- **ERROR**: Error conditions and failures
 
 ## Security Considerations
 
-- Store private keys securely with appropriate permissions
-- Use environment variables for sensitive configuration
-- Monitor transaction limits to prevent unexpected costs
-- Regularly backup the KV database directory for transaction history
-- Random scheduling helps avoid predictable patterns
-- User key pool rotation enhances transaction privacy
+- **Private Key Security**: Store private keys securely with appropriate permissions (chmod 600)
+- **Environment Variables**: Use environment variables for sensitive configuration in production
+- **Transaction Limits**: Monitor daily transaction limits to prevent unexpected costs
+- **Balance Monitoring**: Automatic balance warnings help prevent transaction failures
+- **Database Backups**: Regularly backup the KV database directory for transaction history
+- **Random Patterns**: Random scheduling helps avoid predictable transaction patterns
+- **Key Pool Rotation**: User key pool rotation enhances transaction privacy
+- **Network Security**: Use secure RPC endpoints and consider using private RPC for production
+- **Access Control**: Ensure only authorized processes can access the application configuration
+- **Monitoring**: Enable comprehensive logging to detect unusual activity
 
 ## Development
 
@@ -500,6 +595,10 @@ cargo build --release
 4. **Database locked**: Ensure only one instance is running (Sled handles this automatically)
 5. **No transactions sent**: Check probability calculations in logs
 6. **User key pool errors**: Verify key generation and expiry configuration
+7. **Low balance warnings**: Monitor master keypair balance (⚠️ warnings in logs)
+8. **Category validation errors**: Ensure category names don't exceed size limits
+9. **Automatic funding failures**: Check master keypair has sufficient SOL for funding operations
+10. **Unicode display issues**: Ensure terminal supports Unicode characters for proper log display
 
 ### Debug Logging
 
@@ -522,15 +621,3 @@ To modify the randomization behavior:
 - Adjust time-based multipliers in `get_time_based_multiplier()`
 - Modify probability caps in `calculate_transaction_probability()`
 - Change daily target ranges with `min_daily_transactions` and `max_daily_transactions`
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.  
