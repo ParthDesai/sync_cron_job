@@ -3,13 +3,13 @@
   "database_path": "./kv_store",
   "min_daily_transactions": 80,
   "max_daily_transactions": 120,
-  "min_user_key_expiry_seconds": 7884000,
+  "min_user_key_expiry_seconds": 13140000,
   "max_user_key_expiry_seconds": 15768000,
   "user_key_pool_size": 100,
   "high_rating_percentage": 0.8,
-  "cron_schedule_in_minutes": 15,
+  "cron_schedule_in_minutes": 1,
   "solana_config": {
-    "keypair_file": "your_keypair_path_here",
+    "keypair_file": "<your_keypair_path_here>",
     "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
     "commitment": "confirmed",
     "agents": [

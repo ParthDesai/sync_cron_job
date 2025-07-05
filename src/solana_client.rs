@@ -129,6 +129,24 @@ impl SolanaClient {
         // Load the master keypair for signing from private key
         let master_keypair = self.load_keypair(&self.config.keypair_file)?;
 
+        // Check master keypair balance and warn if low
+        let master_balance = self.get_balance(&master_keypair.pubkey()).await?;
+        const MIN_MASTER_BALANCE_LAMPORTS: u64 = 500_000_000; // 0.5 SOL in lamports
+        
+        if master_balance < MIN_MASTER_BALANCE_LAMPORTS {
+            log::warn!(
+                "⚠️  WARNING: Master keypair balance is LOW! Current balance: {} SOL ({} lamports). Consider funding the master keypair to avoid transaction failures.",
+                master_balance as f64 / 1_000_000_000.0,
+                master_balance
+            );
+        } else {
+            log::info!(
+                "Master keypair balance: {} SOL ({} lamports)",
+                master_balance as f64 / 1_000_000_000.0,
+                master_balance
+            );
+        }
+
         let cluster = Cluster::from_str(&self.rpc_client.url())?;
         let client = Client::new_with_options(cluster, &master_keypair, CommitmentConfig::confirmed());
 
