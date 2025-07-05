@@ -1,10 +1,13 @@
-use crate::{errors::{Result, SyncCronError}, solana_client::TransactionResult};
+use crate::{
+    errors::{Result, SyncCronError},
+    solana_client::TransactionResult,
+};
 use chrono::{DateTime, Utc};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::path::Path;
 use uuid;
-use rand::Rng;
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -63,14 +66,17 @@ impl Database {
     pub async fn new(database_path: &str) -> Result<Self> {
         // If path ends with .db, treat it as a file and use parent directory
         let final_path = if database_path.ends_with(".db") {
-            Path::new(database_path).parent().unwrap_or(Path::new(".")).join("kv_store")
+            Path::new(database_path)
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("kv_store")
         } else {
             Path::new(database_path).to_path_buf()
         };
 
         let db = sled::open(&final_path)
             .map_err(|e| SyncCronError::Config(format!("Failed to open KV database: {}", e)))?;
-        
+
         Ok(Self { db })
     }
 
@@ -83,7 +89,7 @@ impl Database {
     pub async fn get_daily_transaction_count(&self) -> Result<i64> {
         let today = Utc::now().format("%Y-%m-%d").to_string();
         let key = format!("daily_count:{}", today);
-        
+
         match self.db.get(&key)? {
             Some(bytes) => {
                 let count_str = String::from_utf8(bytes.to_vec())
@@ -96,7 +102,7 @@ impl Database {
 
     pub async fn get_daily_target(&self, date: &str) -> Result<Option<u32>> {
         let key = format!("daily_target:{}", date);
-        
+
         match self.db.get(&key)? {
             Some(bytes) => {
                 let target_str = String::from_utf8(bytes.to_vec())
@@ -114,7 +120,12 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_or_generate_daily_target(&self, date: &str, min_target: u32, max_target: u32) -> Result<u32> {
+    pub async fn get_or_generate_daily_target(
+        &self,
+        date: &str,
+        min_target: u32,
+        max_target: u32,
+    ) -> Result<u32> {
         // Try to get existing target for this date
         if let Some(target) = self.get_daily_target(date).await? {
             return Ok(target);
@@ -126,12 +137,18 @@ impl Database {
         } else {
             rand::thread_rng().gen_range(min_target..=max_target)
         };
-        
+
         // Store the target for this date
         self.set_daily_target(date, target).await?;
-        
-        log::info!("🎯 Generated new daily target for {}: {} (range: {}-{})", date, target, min_target, max_target);
-        
+
+        log::info!(
+            "🎯 Generated new daily target for {}: {} (range: {}-{})",
+            date,
+            target,
+            min_target,
+            max_target
+        );
+
         Ok(target)
     }
 
@@ -155,15 +172,19 @@ impl Database {
         let today = now.format("%Y-%m-%d").to_string();
         let count_key = format!("daily_count:{}", today);
         let current_count = self.get_daily_transaction_count().await?;
-        self.db.insert(&count_key, (current_count + 1).to_string().as_bytes())?;
+        self.db
+            .insert(&count_key, (current_count + 1).to_string().as_bytes())?;
 
         self.db.flush_async().await?;
         Ok(())
     }
 
-    pub async fn get_transaction_by_hash(&self, tx_hash: &str) -> Result<Option<TransactionRecord>> {
+    pub async fn get_transaction_by_hash(
+        &self,
+        tx_hash: &str,
+    ) -> Result<Option<TransactionRecord>> {
         let tx_key = format!("tx:{}", tx_hash);
-        
+
         match self.db.get(&tx_key)? {
             Some(bytes) => {
                 let record: TransactionRecord = serde_json::from_slice(&bytes)?;
@@ -248,7 +269,7 @@ impl Database {
     }
 
     // User keypair pool management methods
-    
+
     pub async fn get_user_key_pool(&self) -> Result<Vec<UserKeyRecord>> {
         let mut user_keys = Vec::new();
 
@@ -265,11 +286,17 @@ impl Database {
         Ok(user_keys)
     }
 
-    pub async fn get_random_user_key(&self, min_expiry_seconds: u32, max_expiry_seconds: u32) -> Result<UserKeyRecord> {
+    pub async fn get_random_user_key(
+        &self,
+        min_expiry_seconds: u32,
+        max_expiry_seconds: u32,
+    ) -> Result<UserKeyRecord> {
         let user_keys = self.get_user_key_pool().await?;
-        
+
         if user_keys.is_empty() {
-            return Err(SyncCronError::Config("No user keys available in pool".to_string()));
+            return Err(SyncCronError::Config(
+                "No user keys available in pool".to_string(),
+            ));
         }
 
         // Randomly select a key from the pool
@@ -278,15 +305,20 @@ impl Database {
 
         // Check if the selected key is expired
         if selected_key.is_expired() {
-            log::info!("⏰ Selected user key {} is expired, replacing with new key", selected_key.pubkey);
-            
+            log::info!(
+                "⏰ Selected user key {} is expired, replacing with new key",
+                selected_key.pubkey
+            );
+
             // Remove the expired key
             self.remove_user_key(&selected_key.id).await?;
-            
+
             // Create a new key to replace it
-            let new_key = self.create_new_user_key(min_expiry_seconds, max_expiry_seconds).await?;
+            let new_key = self
+                .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                .await?;
             self.add_user_key(new_key.clone()).await?;
-            
+
             return Ok(new_key);
         }
 
@@ -294,30 +326,51 @@ impl Database {
         let mut key_to_use = selected_key.clone();
         key_to_use.mark_used();
         self.update_user_key(&key_to_use).await?;
-        
-        log::info!("🔑 Using existing user key: {} (expires: {})", key_to_use.pubkey, key_to_use.expires_at);
-        
+
+        log::info!(
+            "🔑 Using existing user key: {} (expires: {})",
+            key_to_use.pubkey,
+            key_to_use.expires_at
+        );
+
         Ok(key_to_use)
     }
 
-    pub async fn ensure_pool_size(&self, target_size: u32, min_expiry_seconds: u32, max_expiry_seconds: u32) -> Result<()> {
+    pub async fn ensure_pool_size(
+        &self,
+        target_size: u32,
+        min_expiry_seconds: u32,
+        max_expiry_seconds: u32,
+    ) -> Result<()> {
         let current_keys = self.get_user_key_pool().await?;
         let current_size = current_keys.len();
-        
-        log::info!("📊 Current user key pool size: {}, target size: {}", current_size, target_size);
+
+        log::info!(
+            "📊 Current user key pool size: {}, target size: {}",
+            current_size,
+            target_size
+        );
 
         if current_size < target_size as usize {
             let keys_to_create = target_size as usize - current_size;
-            log::info!("🔧 Creating {} new user keys to reach target pool size", keys_to_create);
+            log::info!(
+                "🔧 Creating {} new user keys to reach target pool size",
+                keys_to_create
+            );
 
             for i in 0..keys_to_create {
-                let new_key = self.create_new_user_key(min_expiry_seconds, max_expiry_seconds).await?;
+                let new_key = self
+                    .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                    .await?;
                 self.add_user_key(new_key).await?;
                 log::info!("✅ Created user key {}/{}", i + 1, keys_to_create);
             }
         } else if current_size > target_size as usize {
             let keys_to_remove = current_size - target_size as usize;
-            log::info!("🗑️ Removing {} excess user keys to reach target pool size", keys_to_remove);
+            log::info!(
+                "🗑️ Removing {} excess user keys to reach target pool size",
+                keys_to_remove
+            );
 
             // Remove oldest keys first
             for i in 0..keys_to_remove {
@@ -338,9 +391,13 @@ impl Database {
         let serialized = serde_json::to_vec(&user_key)?;
         self.db.insert(&key, serialized)?;
         self.db.flush_async().await?;
-        
-        log::info!("➕ Added user key to pool: {} (expires: {})", user_key.pubkey, user_key.expires_at);
-        
+
+        log::info!(
+            "➕ Added user key to pool: {} (expires: {})",
+            user_key.pubkey,
+            user_key.expires_at
+        );
+
         Ok(())
     }
 
@@ -377,37 +434,52 @@ impl Database {
         Ok(deleted_count)
     }
 
-    pub async fn get_or_create_user_key(&self, pool_size: u32, min_expiry_seconds: u32, max_expiry_seconds: u32) -> Result<UserKeyRecord> {
+    pub async fn get_or_create_user_key(
+        &self,
+        pool_size: u32,
+        min_expiry_seconds: u32,
+        max_expiry_seconds: u32,
+    ) -> Result<UserKeyRecord> {
         // Ensure the pool is at the target size first
-        self.ensure_pool_size(pool_size, min_expiry_seconds, max_expiry_seconds).await?;
-        
+        self.ensure_pool_size(pool_size, min_expiry_seconds, max_expiry_seconds)
+            .await?;
+
         // Get a random key from the pool (this handles expiry replacement automatically)
-        self.get_random_user_key(min_expiry_seconds, max_expiry_seconds).await
+        self.get_random_user_key(min_expiry_seconds, max_expiry_seconds)
+            .await
     }
 
-    async fn create_new_user_key(&self, min_expiry_seconds: u32, max_expiry_seconds: u32) -> Result<UserKeyRecord> {
+    async fn create_new_user_key(
+        &self,
+        min_expiry_seconds: u32,
+        max_expiry_seconds: u32,
+    ) -> Result<UserKeyRecord> {
         use anchor_client::solana_sdk::signature::{Keypair, Signer};
-        
+
         // Generate a new keypair
         let keypair = Keypair::new();
         let pubkey = keypair.pubkey().to_string();
-        
+
         // Encode the private key as base58
         let private_key = bs58::encode(keypair.to_bytes()).into_string();
-        
+
         // Generate random expiry time
         let expiry_seconds = if min_expiry_seconds == max_expiry_seconds {
             min_expiry_seconds
         } else {
             rand::thread_rng().gen_range(min_expiry_seconds..=max_expiry_seconds)
         };
-        
+
         let expires_at = Utc::now() + chrono::Duration::seconds(expiry_seconds as i64);
-        
+
         let user_key = UserKeyRecord::new(pubkey, private_key, expires_at);
-        
-        log::info!("🔑 Created new user key: {} (expires in {} seconds)", user_key.pubkey, expiry_seconds);
-        
+
+        log::info!(
+            "🔑 Created new user key: {} (expires in {} seconds)",
+            user_key.pubkey,
+            expiry_seconds
+        );
+
         Ok(user_key)
     }
 
@@ -416,7 +488,7 @@ impl Database {
         let total_keys = user_keys.len();
         let expired_keys = user_keys.iter().filter(|k| k.is_expired()).count();
         let available_keys = total_keys - expired_keys;
-        
+
         Ok((total_keys, available_keys, expired_keys))
     }
-} 
+}

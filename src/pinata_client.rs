@@ -37,7 +37,7 @@ pub struct PinataUploadResult {
 
 impl PinataClient {
     /// Creates a new Pinata client
-    /// 
+    ///
     /// # Arguments
     /// * `jwt_token` - Your Pinata JWT token
     /// * `gateway_url` - Optional custom gateway URL (defaults to Pinata's public gateway)
@@ -55,12 +55,12 @@ impl PinataClient {
     }
 
     /// Uploads raw bytes to Pinata IPFS
-    /// 
+    ///
     /// # Arguments
     /// * `data` - Raw bytes to upload
     /// * `filename` - Name for the file (will be used in IPFS)
     /// * `mime_type` - Optional MIME type (will be auto-detected if not provided)
-    /// 
+    ///
     /// # Returns
     /// A `PinataUploadResult` containing the CID and various URLs
     pub async fn upload_bytes(
@@ -69,15 +69,17 @@ impl PinataClient {
         filename: &str,
         mime_type: Option<&str>,
     ) -> Result<PinataUploadResult> {
-        let detected_mime_type = mime_type
-            .map(|mt| mt.to_string())
-            .unwrap_or_else(|| {
-                mime_guess::from_path(filename)
-                    .first_or_octet_stream()
-                    .to_string()
-            });
+        let detected_mime_type = mime_type.map(|mt| mt.to_string()).unwrap_or_else(|| {
+            mime_guess::from_path(filename)
+                .first_or_octet_stream()
+                .to_string()
+        });
 
-        log::info!("📤 Uploading file '{}' ({} bytes) to Pinata public IPFS network", filename, data.len());
+        log::info!(
+            "📤 Uploading file '{}' ({} bytes) to Pinata public IPFS network",
+            filename,
+            data.len()
+        );
 
         // Create multipart form
         let part = Part::bytes(data)
@@ -85,9 +87,7 @@ impl PinataClient {
             .mime_str(&detected_mime_type)
             .map_err(|e| SyncCronError::Network(format!("Failed to create multipart: {}", e)))?;
 
-        let form = Form::new()
-            .part("file", part)
-            .text("network", "public");
+        let form = Form::new().part("file", part).text("network", "public");
 
         // Make the upload request
         let response = self
@@ -109,7 +109,11 @@ impl PinataClient {
             .map_err(|e| SyncCronError::Network(format!("Failed to read response: {}", e)))?;
 
         if !status.is_success() {
-            log::error!("⛔ Pinata upload failed with status {}: {}", status, response_text);
+            log::error!(
+                "⛔ Pinata upload failed with status {}: {}",
+                status,
+                response_text
+            );
             return Err(SyncCronError::Network(format!(
                 "Upload failed with status {}: {}",
                 status, response_text
@@ -117,15 +121,22 @@ impl PinataClient {
         }
 
         // Parse the response
-        let upload_response_wrapper: PinataUploadResponseWrapper = serde_json::from_str(&response_text)
-            .map_err(|e| {
-                log::error!("🔍 Failed to parse Pinata response: {} with an error: {}", response_text, e);
+        let upload_response_wrapper: PinataUploadResponseWrapper =
+            serde_json::from_str(&response_text).map_err(|e| {
+                log::error!(
+                    "🔍 Failed to parse Pinata response: {} with an error: {}",
+                    response_text,
+                    e
+                );
                 SyncCronError::Network(format!("Failed to parse response: {}", e))
             })?;
 
         let upload_response = upload_response_wrapper.data;
 
-        log::info!("✅ Successfully uploaded file to Pinata IPFS with CID: {}", upload_response.cid);
+        log::info!(
+            "✅ Successfully uploaded file to Pinata IPFS with CID: {}",
+            upload_response.cid
+        );
 
         // Create the result with various URL formats
         let result = PinataUploadResult {
@@ -139,32 +150,24 @@ impl PinataClient {
     }
 
     /// Uploads a string as a text file to Pinata IPFS
-    /// 
+    ///
     /// # Arguments
     /// * `content` - String content to upload
     /// * `filename` - Name for the file
-    /// 
+    ///
     /// # Returns
     /// A `PinataUploadResult` containing the CID and various URLs
-    pub async fn upload_text(
-        &self,
-        content: &str,
-        filename: &str,
-    ) -> Result<PinataUploadResult> {
-        self.upload_bytes(
-            content.as_bytes().to_vec(),
-            filename,
-            Some("text/plain"),
-        )
-        .await
+    pub async fn upload_text(&self, content: &str, filename: &str) -> Result<PinataUploadResult> {
+        self.upload_bytes(content.as_bytes().to_vec(), filename, Some("text/plain"))
+            .await
     }
 
     /// Uploads JSON data to Pinata IPFS
-    /// 
+    ///
     /// # Arguments
     /// * `data` - Any serializable data
     /// * `filename` - Name for the JSON file
-    /// 
+    ///
     /// # Returns
     /// A `PinataUploadResult` containing the CID and various URLs
     pub async fn upload_json<T: Serialize>(
@@ -220,9 +223,9 @@ mod tests {
             "test_jwt_token".to_string(),
             "https://custom-gateway.com".to_string(),
         );
-        
+
         assert!(client.is_ok());
         let client = client.unwrap();
         assert_eq!(client.get_gateway_url(), "https://custom-gateway.com");
     }
-} 
+}

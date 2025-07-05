@@ -12,9 +12,9 @@ use pinata_client::PinataClient;
 use solana_client::SolanaClient;
 use transaction_manager::TransactionManager;
 
-use tokio_cron_scheduler::{Job, JobScheduler};
-use std::sync::Arc;
 use chrono::Utc;
+use std::sync::Arc;
+use tokio_cron_scheduler::{Job, JobScheduler};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -34,14 +34,23 @@ async fn main() -> Result<()> {
 
     // Initialize user key pool
     log::info!("🔄 Initializing user key pool...");
-    database.ensure_pool_size(
-        config.user_key_pool_size,
-        config.min_user_key_expiry_seconds,
-        config.max_user_key_expiry_seconds
-    ).await?;
-    log::info!("🔑 User key pool initialized with {} keys", config.user_key_pool_size);
+    database
+        .ensure_pool_size(
+            config.user_key_pool_size,
+            config.min_user_key_expiry_seconds,
+            config.max_user_key_expiry_seconds,
+        )
+        .await?;
+    log::info!(
+        "🔑 User key pool initialized with {} keys",
+        config.user_key_pool_size
+    );
 
-    let pinata_client = PinataClient::new(config.pinata_config.jwt_token.clone(), config.pinata_config.gateway_url.clone()).expect("Pinata client must initialize");
+    let pinata_client = PinataClient::new(
+        config.pinata_config.jwt_token.clone(),
+        config.pinata_config.gateway_url.clone(),
+    )
+    .expect("Pinata client must initialize");
     log::info!("📁 Pinata client initialized");
 
     // Load agent keypairs from configuration
@@ -49,7 +58,14 @@ async fn main() -> Result<()> {
     log::info!("👥 Loaded {} agent keypairs", agents.len());
 
     // Initialize Solana client with loaded agents
-    let solana_client = SolanaClient::new(&config.solana_rpc_url, config.solana_config.clone(), pinata_client, agents, database.clone(), config.clone());
+    let solana_client = SolanaClient::new(
+        &config.solana_rpc_url,
+        config.solana_config.clone(),
+        pinata_client,
+        agents,
+        database.clone(),
+        config.clone(),
+    );
     log::info!("🌐 Solana client initialized");
 
     // Create transaction manager
@@ -77,14 +93,18 @@ async fn main() -> Result<()> {
 
     // Get today's daily target if it exists
     let today = Utc::now().format("%Y-%m-%d").to_string();
-    let daily_target_info = match transaction_manager.get_database().get_daily_target(&today).await? {
+    let daily_target_info = match transaction_manager
+        .get_database()
+        .get_daily_target(&today)
+        .await?
+    {
         Some(target) => format!("{}", target),
         None => "TBD".to_string(),
     };
 
     log::info!("⏰ Random transaction scheduler started (every {} minutes, daily range: {}-{}, today's target: {})", 
         config.cron_schedule_in_minutes,
-        config.min_daily_transactions, 
+        config.min_daily_transactions,
         config.max_daily_transactions,
         daily_target_info
     );
@@ -95,10 +115,12 @@ async fn main() -> Result<()> {
     scheduler.start().await?;
 
     // Keep the application running
-    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for ctrl+c");
 
     log::info!("🛑 Shutting down...");
     scheduler.shutdown().await?;
 
     Ok(())
-} 
+}

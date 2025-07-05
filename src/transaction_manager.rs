@@ -1,8 +1,8 @@
 use crate::config::AppConfig;
 use crate::database::Database;
-use crate::errors::{Result};
+use crate::errors::Result;
 use crate::solana_client::{SolanaClient, TransactionResult};
-use chrono::{Utc, Timelike};
+use chrono::{Timelike, Utc};
 use rand::Rng;
 
 pub struct TransactionManager {
@@ -31,50 +31,63 @@ impl TransactionManager {
 
         // Get today's date
         let today = Utc::now().format("%Y-%m-%d").to_string();
-        
+
         // Get or generate daily target for today
-        let daily_target = self.database.get_or_generate_daily_target(
-            &today, 
-            self.config.min_daily_transactions, 
-            self.config.max_daily_transactions
-        ).await?;
+        let daily_target = self
+            .database
+            .get_or_generate_daily_target(
+                &today,
+                self.config.min_daily_transactions,
+                self.config.max_daily_transactions,
+            )
+            .await?;
 
         // Check current daily transaction count
         let current_count = self.database.get_daily_transaction_count().await?;
-        log::info!("📊 Current daily transaction count: {}/{}", current_count, daily_target);
+        log::info!(
+            "📊 Current daily transaction count: {}/{}",
+            current_count,
+            daily_target
+        );
 
         // Check if we've reached the daily target
         if current_count >= daily_target as i64 {
             log::info!(
                 "✅ Daily transaction target ({}) already reached ({}). Skipping...",
-                daily_target, current_count
+                daily_target,
+                current_count
             );
             return Ok(());
         }
 
         // Calculate remaining transactions for today
         let remaining_transactions = daily_target as i64 - current_count;
-        
+
         // Calculate probability of sending a transaction this cycle
         // We want to distribute transactions randomly throughout the day
-        let probability = self.calculate_transaction_probability(remaining_transactions).await?;
-        
+        let probability = self
+            .calculate_transaction_probability(remaining_transactions)
+            .await?;
+
         // Generate random number to decide if we should send a transaction
         let random_value: f64 = rand::thread_rng().gen();
-        
+
         log::info!(
-            "🎲 Transaction probability: {:.2}%, random value: {:.2}%", 
-            probability * 100.0, 
+            "🎲 Transaction probability: {:.2}%, random value: {:.2}%",
+            probability * 100.0,
             random_value * 100.0
         );
 
         if random_value < probability {
             log::info!("🎯 Randomly selected to send transaction now!");
-            
+
             match self.send_single_transaction().await {
                 Ok(tx_result) => {
-                    log::info!("✅ Random transactions sent successfully: {}", tx_result.signatures.join(", "));
-                    
+                    log::info!(
+                        "✅ Random transactions sent successfully: {}",
+                        tx_result.signatures.join(", ")
+                    );
+
                     if let Err(e) = self.database.insert_transaction(tx_result).await {
                         log::error!("❌ Failed to record transaction in database: {}", e);
                     }
@@ -89,14 +102,23 @@ impl TransactionManager {
 
         // Update daily transaction count and log statistics
         let current_count = self.database.get_daily_transaction_count().await?;
-        log::info!("Daily transaction count: {}/{}", current_count, daily_target);
+        log::info!(
+            "Daily transaction count: {}/{}",
+            current_count,
+            daily_target
+        );
 
         // Cleanup old transactions (older than 30 days)
         self.cleanup_old_transactions().await?;
 
         // Log user key pool statistics
         if let Ok((total, available, expired)) = self.database.get_user_key_pool_stats().await {
-            log::info!("User key pool stats: {} total, {} available, {} expired", total, available, expired);
+            log::info!(
+                "User key pool stats: {} total, {} available, {} expired",
+                total,
+                available,
+                expired
+            );
         }
 
         log::info!("Random transaction processing completed");
@@ -113,12 +135,12 @@ impl TransactionManager {
         let now = Utc::now();
         let current_hour = now.hour();
         let current_minute = now.minute();
-        
+
         // Calculate how many cycles are left in the day based on the configurable interval
         let cycle_interval = self.config.cron_schedule_in_minutes;
         let minutes_left_in_day = (24 - current_hour) * 60 - current_minute;
         let cycles_left_in_day = (minutes_left_in_day / cycle_interval) as i64;
-        
+
         if cycles_left_in_day <= 0 {
             // If it's very late in the day, send remaining transactions with higher probability
             return Ok(1.0);
@@ -126,14 +148,14 @@ impl TransactionManager {
 
         // Base probability: evenly distribute remaining transactions across remaining cycles
         let base_probability = remaining_transactions as f64 / cycles_left_in_day as f64;
-        
+
         // Apply time-based adjustments to make transactions more realistic
         let time_multiplier = self.get_time_based_multiplier(current_hour);
         let adjusted_probability = base_probability * time_multiplier;
-        
+
         // Cap probability at 1.0 and ensure minimum randomness
         let final_probability = adjusted_probability.min(0.8).max(0.01);
-        
+
         log::info!(
             "Probability calculation: {} remaining, {} cycles left ({} min intervals), base: {:.3}, time_mult: {:.2}, final: {:.3}",
             remaining_transactions, cycles_left_in_day, cycle_interval, base_probability, time_multiplier, final_probability
@@ -165,23 +187,31 @@ impl TransactionManager {
 
         // Get today's date
         let today = Utc::now().format("%Y-%m-%d").to_string();
-        
+
         // Get or generate daily target for today
-        let daily_target = self.database.get_or_generate_daily_target(
-            &today, 
-            self.config.min_daily_transactions, 
-            self.config.max_daily_transactions
-        ).await?;
+        let daily_target = self
+            .database
+            .get_or_generate_daily_target(
+                &today,
+                self.config.min_daily_transactions,
+                self.config.max_daily_transactions,
+            )
+            .await?;
 
         // Check current daily transaction count
         let current_count = self.database.get_daily_transaction_count().await?;
-        log::info!("📊 Current daily transaction count: {}/{}", current_count, daily_target);
+        log::info!(
+            "📊 Current daily transaction count: {}/{}",
+            current_count,
+            daily_target
+        );
 
         // Check if we've reached the daily target
         if current_count >= daily_target as i64 {
             log::info!(
                 "Daily transaction target ({}) already reached ({}). Skipping...",
-                daily_target, current_count
+                daily_target,
+                current_count
             );
             return Ok(());
         }
@@ -196,8 +226,12 @@ impl TransactionManager {
         for i in 0..transactions_to_send {
             match self.send_single_transaction().await {
                 Ok(tx_result) => {
-                    log::info!("Transaction {} sent successfully: {}", i + 1, tx_result.signatures.join(", "));
-                    
+                    log::info!(
+                        "Transaction {} sent successfully: {}",
+                        i + 1,
+                        tx_result.signatures.join(", ")
+                    );
+
                     // Insert transaction records
                     if let Err(e) = self.database.insert_transaction(tx_result).await {
                         log::error!("Failed to record transaction in database: {}", e);
@@ -212,7 +246,11 @@ impl TransactionManager {
 
         // Update daily transaction count and log statistics
         let current_count = self.database.get_daily_transaction_count().await?;
-        log::info!("Daily transaction count: {}/{}", current_count, daily_target);
+        log::info!(
+            "Daily transaction count: {}/{}",
+            current_count,
+            daily_target
+        );
 
         // Cleanup old transactions (older than 30 days)
         self.cleanup_old_transactions().await?;
@@ -222,7 +260,10 @@ impl TransactionManager {
     }
 
     async fn send_single_transaction(&self) -> Result<TransactionResult> {
-        let result = self.solana_client.submit_transaction(&self.config.solana_config).await?;
+        let result = self
+            .solana_client
+            .submit_transaction(&self.config.solana_config)
+            .await?;
         Ok(result)
     }
 
@@ -243,15 +284,15 @@ impl TransactionManager {
     pub async fn get_daily_stats(&self) -> Result<()> {
         let today = Utc::now().format("%Y-%m-%d").to_string();
         let stats = self.database.get_daily_stats(&today).await?;
-        
+
         log::info!(
-            "Daily stats for {}: {} total, {} successful, {} failed", 
-            stats.date, 
-            stats.transactions_sent, 
-            stats.successful_transactions, 
+            "Daily stats for {}: {} total, {} successful, {} failed",
+            stats.date,
+            stats.transactions_sent,
+            stats.successful_transactions,
             stats.failed_transactions
         );
-        
+
         Ok(())
     }
 
@@ -259,10 +300,10 @@ impl TransactionManager {
         log::info!("Force sending transaction (ignoring daily limits)");
         let result = self.send_single_transaction().await?;
         let tx_hashes = result.signatures.clone();
-        
+
         // Insert transaction records
         self.database.insert_transaction(result).await?;
-        
+
         Ok(tx_hashes)
     }
-} 
+}

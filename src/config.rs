@@ -1,9 +1,9 @@
 use crate::errors::{Result, SyncCronError};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -65,8 +65,8 @@ impl AppConfig {
         let secondary_category_size = sync_contract::types::SECONDARY_CATEGORY_SIZE;
 
         log::info!("🔍 Validating {} primary categories against size limits (primary: {} bytes, secondary: {} bytes)", 
-            self.solana_config.categories_supported.len(), 
-            primary_category_size, 
+            self.solana_config.categories_supported.len(),
+            primary_category_size,
             secondary_category_size
         );
 
@@ -101,40 +101,50 @@ impl AppConfig {
     pub fn get_random_categories(&self) -> Result<(String, String)> {
         if self.solana_config.categories_supported.is_empty() {
             return Err(SyncCronError::Config(
-                "No categories configured in categories_supported".to_string()
+                "No categories configured in categories_supported".to_string(),
             ));
         }
 
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         // Get all primary categories
-        let primary_categories: Vec<&String> = self.solana_config.categories_supported.keys().collect();
-        
+        let primary_categories: Vec<&String> =
+            self.solana_config.categories_supported.keys().collect();
+
         // Select a random primary category
         let primary_category = primary_categories[rng.gen_range(0..primary_categories.len())];
-        
+
         // Get secondary categories for the selected primary category
-        let secondary_categories = self.solana_config.categories_supported.get(primary_category).unwrap();
-        
+        let secondary_categories = self
+            .solana_config
+            .categories_supported
+            .get(primary_category)
+            .unwrap();
+
         if secondary_categories.is_empty() {
             return Err(SyncCronError::Config(format!(
                 "No secondary categories found for primary category '{}'",
                 primary_category
             )));
         }
-        
+
         // Select a random secondary category
-        let secondary_category = &secondary_categories[rng.gen_range(0..secondary_categories.len())];
-        
-        log::debug!("🎯 Selected random categories: Primary='{}', Secondary='{}'", primary_category, secondary_category);
-        
+        let secondary_category =
+            &secondary_categories[rng.gen_range(0..secondary_categories.len())];
+
+        log::debug!(
+            "🎯 Selected random categories: Primary='{}', Secondary='{}'",
+            primary_category,
+            secondary_category
+        );
+
         Ok((primary_category.clone(), secondary_category.clone()))
     }
 
     fn load_from_file() -> Result<Self> {
         let config_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.json".to_string());
-        
+
         if !Path::new(&config_path).exists() {
             return Err(SyncCronError::Config(format!(
                 "Config file not found: {}",
@@ -170,12 +180,16 @@ impl AppConfig {
         let min_user_key_expiry_seconds = env::var("MIN_USER_KEY_EXPIRY_SECONDS")
             .unwrap_or_else(|_| "3600".to_string())
             .parse::<u32>()
-            .map_err(|e| SyncCronError::Config(format!("Invalid min user key expiry seconds: {}", e)))?;
+            .map_err(|e| {
+                SyncCronError::Config(format!("Invalid min user key expiry seconds: {}", e))
+            })?;
 
         let max_user_key_expiry_seconds = env::var("MAX_USER_KEY_EXPIRY_SECONDS")
             .unwrap_or_else(|_| "86400".to_string())
             .parse::<u32>()
-            .map_err(|e| SyncCronError::Config(format!("Invalid max user key expiry seconds: {}", e)))?;
+            .map_err(|e| {
+                SyncCronError::Config(format!("Invalid max user key expiry seconds: {}", e))
+            })?;
 
         let user_key_pool_size = env::var("USER_KEY_POOL_SIZE")
             .unwrap_or_else(|_| "100".to_string())
@@ -190,7 +204,9 @@ impl AppConfig {
         let cron_schedule_in_minutes = env::var("CRON_SCHEDULE_IN_MINUTES")
             .unwrap_or_else(|_| "15".to_string())
             .parse::<u32>()
-            .map_err(|e| SyncCronError::Config(format!("Invalid cron schedule in minutes: {}", e)))?;
+            .map_err(|e| {
+                SyncCronError::Config(format!("Invalid cron schedule in minutes: {}", e))
+            })?;
 
         let keypair_file = env::var("KEYPAIR_FILE")
             .unwrap_or_else(|_| "your_keypair_private_key_here".to_string());
@@ -198,8 +214,7 @@ impl AppConfig {
         let program_id = env::var("PROGRAM_ID")
             .unwrap_or_else(|_| "11111111111111111111111111111112".to_string());
 
-        let commitment = env::var("COMMITMENT")
-            .unwrap_or_else(|_| "confirmed".to_string());
+        let commitment = env::var("COMMITMENT").unwrap_or_else(|_| "confirmed".to_string());
 
         let instruction_data = env::var("INSTRUCTION_DATA").unwrap_or_default();
 
@@ -216,8 +231,10 @@ impl AppConfig {
             .ok()
             .map(|jwt_token| PinataConfig {
                 jwt_token,
-                gateway_url: env::var("PINATA_GATEWAY_URL").unwrap_or_else(|_| "https://gateway.pinata.cloud".to_string()),
-            }).expect("Pinata config must exist");
+                gateway_url: env::var("PINATA_GATEWAY_URL")
+                    .unwrap_or_else(|_| "https://gateway.pinata.cloud".to_string()),
+            })
+            .expect("Pinata config must exist");
 
         // Create default categories if not provided via environment
         let mut categories_supported = HashMap::new();
@@ -247,25 +264,37 @@ impl AppConfig {
 
     pub fn save_example() -> Result<()> {
         log::info!("📝 Creating example configuration...");
-        
+
         let mut categories_supported = HashMap::new();
-        categories_supported.insert("technology".to_string(), vec![
-            "ai".to_string(),
-            "blockchain".to_string(),
-            "software".to_string(),
-        ]);
-        categories_supported.insert("science".to_string(), vec![
-            "physics".to_string(),
-            "chemistry".to_string(),
-            "biology".to_string(),
-        ]);
-        categories_supported.insert("business".to_string(), vec![
-            "finance".to_string(),
-            "marketing".to_string(),
-            "strategy".to_string(),
-        ]);
-        
-        log::debug!("🏷️ Added {} example category groups", categories_supported.len());
+        categories_supported.insert(
+            "technology".to_string(),
+            vec![
+                "ai".to_string(),
+                "blockchain".to_string(),
+                "software".to_string(),
+            ],
+        );
+        categories_supported.insert(
+            "science".to_string(),
+            vec![
+                "physics".to_string(),
+                "chemistry".to_string(),
+                "biology".to_string(),
+            ],
+        );
+        categories_supported.insert(
+            "business".to_string(),
+            vec![
+                "finance".to_string(),
+                "marketing".to_string(),
+                "strategy".to_string(),
+            ],
+        );
+
+        log::debug!(
+            "🏷️ Added {} example category groups",
+            categories_supported.len()
+        );
 
         let example_config = AppConfig {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
@@ -281,9 +310,7 @@ impl AppConfig {
                 keypair_file: "your_keypair_file_here".to_string(),
                 program_id: "11111111111111111111111111111112".to_string(),
                 commitment: "confirmed".to_string(),
-                agents: vec![
-                    "your_agent_private_key_here".to_string(),
-                ],
+                agents: vec!["your_agent_private_key_here".to_string()],
                 categories_supported,
             },
             pinata_config: PinataConfig {
@@ -297,4 +324,4 @@ impl AppConfig {
         log::info!("✅ Example configuration saved to config.example.json");
         Ok(())
     }
-} 
+}

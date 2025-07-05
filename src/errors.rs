@@ -1,6 +1,6 @@
-use serde_json;
 use anchor_client::solana_client::client_error::ClientError;
 use anchor_client::ClientError as AnchorClientError;
+use serde_json;
 use std::io;
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -48,4 +48,4 @@ pub enum SyncCronError {
     Network(String),
 }
 
-pub type Result<T> = std::result::Result<T, SyncCronError>; 
+pub type Result<T> = std::result::Result<T, SyncCronError>;
