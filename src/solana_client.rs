@@ -239,6 +239,15 @@ impl SolanaClient {
             secondary_category
         );
 
+        let (user_config, _) = Pubkey::find_program_address(
+            &[
+                b"sync_program".as_ref(),
+                b"user_config".as_ref(),
+                user.pubkey().as_ref(),
+            ],
+            &program.id(),
+        );
+
         // Submit data transaction - waits for confirmation
         let submitdata_signature = program
             .request()
@@ -246,6 +255,7 @@ impl SolanaClient {
                 data_submission,
                 signer: user.pubkey(),
                 system_program: System::id(),
+                user_config,
             })
             .args(sync_contract::instruction::SubmitData {
                 data_link: upload_result.public_url.clone(),
@@ -293,6 +303,7 @@ impl SolanaClient {
                 data_submission,
                 agent_config,
                 signer: agent.pubkey(),
+                user_config,
             })
             .args(sync_contract::instruction::RateData {
                 data_link: upload_result.public_url.clone(),
