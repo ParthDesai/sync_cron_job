@@ -116,19 +116,35 @@ impl TransactionManager {
                                 signature
                             );
 
-                            // Update the user's accumulated credits to 0 after successful claim
-                            if let Err(e) = self
-                                .database
-                                .update_user_accumulated_credits(
-                                    &user_with_credits.id,
-                                    new_accumulated_credits,
-                                )
-                                .await
-                            {
-                                log::error!(
-                                    "❌ Failed to reset accumulated credits after claim: {}",
-                                    e
+                            // If the user was expired, remove the entry after successful claim
+                            if user_with_credits.is_expired() {
+                                log::info!(
+                                    "🗑️ Removing expired user {} after successful credit claim",
+                                    user_with_credits.pubkey
                                 );
+                                if let Err(e) =
+                                    self.database.remove_user_key(&user_with_credits.id).await
+                                {
+                                    log::error!(
+                                        "❌ Failed to remove expired user after claim: {}",
+                                        e
+                                    );
+                                }
+                            } else {
+                                // Update the user's accumulated credits for active users
+                                if let Err(e) = self
+                                    .database
+                                    .update_user_accumulated_credits(
+                                        &user_with_credits.id,
+                                        new_accumulated_credits,
+                                    )
+                                    .await
+                                {
+                                    log::error!(
+                                        "❌ Failed to update accumulated credits after claim: {}",
+                                        e
+                                    );
+                                }
                             }
                         }
                         Err(e) => {

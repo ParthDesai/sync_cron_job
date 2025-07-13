@@ -462,10 +462,13 @@ impl SolanaClient {
             &program.id(),
         );
 
+        let user_config_content: UserConfig = program.account(user_config.clone()).await?;
+
         log::info!(
-            "💳 Claiming {} credits for user {}",
+            "💳 Claiming {} credits for user as per our records: {}, as per on chain: {}",
             user_key_record.accumulated_credits,
-            user.pubkey()
+            user.pubkey(),
+            user_config_content.accumulated_credits
         );
 
         // Get the program state PDA

@@ -307,21 +307,38 @@ impl Database {
 
         // Check if the selected key is expired
         if selected_key.is_expired() {
-            log::info!(
-                "⏰ Selected user key {} is expired, replacing with new key",
-                selected_key.pubkey
-            );
+            // If expired user has accumulated credits > 0, preserve them and create a new key
+            if selected_key.accumulated_credits > 0 {
+                log::info!(
+                    "⏰ Selected user key {} is expired but has {} accumulated credits, preserving and creating new key",
+                    selected_key.pubkey,
+                    selected_key.accumulated_credits
+                );
 
-            // Remove the expired key
-            self.remove_user_key(&selected_key.id).await?;
+                // Create a new key without removing the expired one (to preserve credits)
+                let new_key = self
+                    .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                    .await?;
+                self.add_user_key(new_key.clone()).await?;
 
-            // Create a new key to replace it
-            let new_key = self
-                .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
-                .await?;
-            self.add_user_key(new_key.clone()).await?;
+                return Ok(new_key);
+            } else {
+                log::info!(
+                    "⏰ Selected user key {} is expired with no accumulated credits, replacing with new key",
+                    selected_key.pubkey
+                );
 
-            return Ok(new_key);
+                // Remove the expired key (no credits to preserve)
+                self.remove_user_key(&selected_key.id).await?;
+
+                // Create a new key to replace it
+                let new_key = self
+                    .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                    .await?;
+                self.add_user_key(new_key.clone()).await?;
+
+                return Ok(new_key);
+            }
         }
 
         // Key is not expired, mark it as used and return
@@ -535,15 +552,21 @@ impl Database {
         for result in self.db.scan_prefix("user_key:") {
             let (_, record_bytes) = result?;
             if let Ok(record) = serde_json::from_slice::<UserKeyRecord>(&record_bytes) {
-                if record.accumulated_credits > 0 && !record.is_expired() {
+                // Include both expired and non-expired users with accumulated credits > 0
+                if record.accumulated_credits > 0 {
                     users_with_credits.push(record);
                 }
             }
         }
 
+        let expired_count = users_with_credits.iter().filter(|u| u.is_expired()).count();
+        let active_count = users_with_credits.len() - expired_count;
+
         log::info!(
-            "💳 Found {} users with accumulated credits > 0",
-            users_with_credits.len()
+            "💳 Found {} users with accumulated credits > 0 ({} active, {} expired)",
+            users_with_credits.len(),
+            active_count,
+            expired_count
         );
 
         Ok(users_with_credits)
@@ -557,14 +580,39 @@ impl Database {
             return Ok(None);
         }
 
-        let random_index = rand::thread_rng().gen_range(0..users_with_credits.len());
-        let selected_user = users_with_credits[random_index].clone();
+        // Separate expired and active users
+        let expired_users: Vec<UserKeyRecord> = users_with_credits
+            .iter()
+            .filter(|u| u.is_expired())
+            .cloned()
+            .collect();
 
-        log::info!(
-            "🎲 Selected random user with credits: {} (credits: {})",
-            selected_user.pubkey,
-            selected_user.accumulated_credits
-        );
+        let active_users: Vec<UserKeyRecord> = users_with_credits
+            .iter()
+            .filter(|u| !u.is_expired())
+            .cloned()
+            .collect();
+
+        // Prioritize expired users - select from expired users first if available
+        let selected_user = if !expired_users.is_empty() {
+            let random_index = rand::thread_rng().gen_range(0..expired_users.len());
+            let user = expired_users[random_index].clone();
+            log::info!(
+                "🎲 Selected EXPIRED user with credits (prioritized): {} (credits: {})",
+                user.pubkey,
+                user.accumulated_credits
+            );
+            user
+        } else {
+            let random_index = rand::thread_rng().gen_range(0..active_users.len());
+            let user = active_users[random_index].clone();
+            log::info!(
+                "🎲 Selected active user with credits: {} (credits: {})",
+                user.pubkey,
+                user.accumulated_credits
+            );
+            user
+        };
 
         Ok(Some(selected_user))
     }
