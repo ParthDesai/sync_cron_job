@@ -21,6 +21,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shellexpand;
+use sync_contract::types::UserConfig;
 use std::str::FromStr;
 
 pub struct SolanaClient {
@@ -35,6 +36,7 @@ pub struct SolanaClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionResult {
     pub signatures: Vec<String>,
+    pub user_accumulated_credits: u128,
     pub ipfs_url: String,
     pub slot: Option<u64>,
     pub block_hash: Option<String>,
@@ -319,8 +321,14 @@ impl SolanaClient {
             rate_data_signature.to_string()
         );
 
+        let user_config_content: UserConfig = program
+            .account(user_config.clone()).await?;
+
+        let user_accumulated_credits = user_config_content.accumulated_credits;
+
         // Both transactions are confirmed when we reach this point
         Ok(TransactionResult {
+            user_accumulated_credits,
             signatures: vec![
                 submitdata_signature.to_string(),
                 rate_data_signature.to_string(),
