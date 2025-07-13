@@ -8,6 +8,10 @@ A Rust-based cron job application that interacts with Solana smart contracts on 
 - **Time-Based Distribution**: Adjusts transaction probability based on time of day (higher during business hours)
 - **Dynamic Daily Transaction Limits**: Configurable range of daily transaction limits with random target generation
 - **User Key Pool Management**: Maintains a pool of temporary user keys with automatic expiry and rotation
+- **Accumulated Credits Management**: Tracks and manages user accumulated credits from smart contract interactions
+- **Expired User Credit Preservation**: Preserves accumulated credits for expired users until they can be claimed
+- **ClaimCredits Instruction**: Automatically processes credit claims for users during skip cycles
+- **Priority Credit Processing**: Prioritizes expired users for credit claiming to optimize database cleanup
 - **Local KV Storage**: Uses Sled embedded database for fast, reliable local storage
 - **State Management**: Tracks transaction history and status without external dependencies
 - **Solana Integration**: Full Solana blockchain integration with transaction confirmation tracking
@@ -64,6 +68,47 @@ The application uses an intelligent randomization system that:
 - **Evening (17:00-21:00)**: 80% of base probability
 - **Late night (21:00-24:00)**: 50% of base probability
 
+## Accumulated Credits Management
+
+The application includes a sophisticated system for managing user accumulated credits from smart contract interactions:
+
+### How Credits Are Managed
+
+1. **Credit Tracking**: After each successful transaction, the user's accumulated credits are fetched from the smart contract and stored in the local database
+2. **Credit Preservation**: When a user key expires but has accumulated credits > 0, the expired user entry is preserved in the database
+3. **Priority Processing**: During skip cycles, expired users with credits are prioritized for credit claiming over active users
+4. **Automatic Cleanup**: After successful credit claiming, expired users are automatically removed from the database
+
+### Credit Claiming Process
+
+When a transaction cycle is skipped (based on probability), the system:
+
+1. **Searches for users** with accumulated credits > 0 (including expired users)
+2. **Prioritizes expired users** to optimize database cleanup
+3. **Calls ClaimCredits instruction** on the smart contract
+4. **Updates or removes user entries** based on success:
+   - **Expired users**: Removed from database after successful claim
+   - **Active users**: Credits updated to new value from smart contract
+
+### Expired User Handling
+
+The system uses a two-tier approach for expired users:
+
+#### Normal User Key Selection
+- **Expired user with credits > 0**: Preserve in database, create new user key
+- **Expired user with no credits**: Remove from database, create new user key
+
+#### Credit Claiming Priority
+- **First priority**: Random selection from expired users with credits > 0
+- **Second priority**: Random selection from active users with credits > 0
+
+### Benefits
+
+- **No Credit Loss**: Users don't lose accumulated credits when their keys expire
+- **Efficient Database Management**: Automatic cleanup of expired entries after credit claiming
+- **Optimized Processing**: Priority system ensures expired users are processed first
+- **Resource Management**: Prevents unlimited growth of expired user entries
+
 ## Configuration
 
 ### JSON Configuration
@@ -85,6 +130,7 @@ Create a `config.json` file based on `config.example.json`:
     "keypair_file": "<your_keypair_path_here>",
     "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
     "commitment": "confirmed",
+    "token_mint_address": "your_token_mint_address_here",
     "agents": [
       "YOUR_AGENT_PRIVATE_KEY_HERE"
     ],
@@ -150,6 +196,7 @@ export CRON_SCHEDULE_IN_MINUTES="1"
 export KEYPAIR_FILE="YOUR_BASE58_PRIVATE_KEY_HERE"
 export PROGRAM_ID="HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
 export COMMITMENT="confirmed"
+export TOKEN_MINT_ADDRESS="your_token_mint_address_here"
 export SOLANA_AGENTS="AGENT_PRIVATE_KEY_1,AGENT_PRIVATE_KEY_2"
 export PINATA_JWT_TOKEN="your_pinata_jwt_token_here"
 export PINATA_GATEWAY_URL="https://gateway.pinata.cloud"
@@ -169,6 +216,7 @@ export PINATA_GATEWAY_URL="https://gateway.pinata.cloud"
 - **keypair_file**: Base58-encoded private key for main wallet (master keypair)
 - **program_id**: Target Solana program public key
 - **commitment**: Transaction commitment level (confirmed, finalized)
+- **token_mint_address**: Token mint address for credit claiming operations
 - **agents**: Array of Base58-encoded private keys for agent wallets
 - **categories_supported**: Mapping of primary categories to their secondary categories (nested under solana_config)
 - **pinata_config**: IPFS configuration for Pinata service (JWT token and gateway URL)
@@ -263,6 +311,10 @@ INFO 🎯 Selected categories - Primary: 'technology', Secondary: 'blockchain'
 INFO 💰 Master keypair balance: 1.25 SOL (1250000000 lamports)
 INFO 🎲 Transaction probability: 18.75%, random value: 23.45%
 INFO ⏭️ Skipping transaction this cycle (random selection)
+INFO 💳 Found 3 users with accumulated credits > 0 (2 active, 1 expired)
+INFO 🎲 Selected EXPIRED user with credits (prioritized): 7kX...xyz (credits: 150)
+INFO ✅ Successfully claimed credits for user 7kX...xyz, tx hash: 5Nc...abc
+INFO 🗑️ Removing expired user 7kX...xyz after successful credit claim
 ```
 
 ## User Key Pool Management
@@ -273,14 +325,16 @@ The application maintains a pool of temporary user keys that are automatically g
 - **Automatic Key Generation**: Creates new keypairs as needed
 - **Expiry Management**: Keys expire after a random time within configured range
 - **Pool Maintenance**: Ensures the pool always has the required number of available keys
-- **Cleanup**: Automatically removes expired keys
+- **Smart Cleanup**: Automatically removes expired keys, but preserves those with accumulated credits > 0
 - **Usage Tracking**: Tracks when keys are used and updates statistics
+- **Credit Preservation**: Expired users with accumulated credits are preserved until credits are claimed
 
 ### Statistics
 The application logs user key pool statistics including:
 - Total keys in pool
 - Available (non-expired) keys
 - Expired keys awaiting cleanup
+- Users with accumulated credits (broken down by active/expired)
 
 ## Private Key Configuration
 
@@ -432,7 +486,7 @@ The KV database stores:
 - **Transaction Records**: `tx:{hash}` → Transaction details (JSON)
 - **Daily Counters**: `daily_count:{date}` → Transaction count for the day
 - **Daily Targets**: `daily_target:{date}` → Target transactions for the day
-- **User Keys**: `user_key:{id}` → User key records with expiry
+- **User Keys**: `user_key:{id}` → User key records with expiry and accumulated credits
 - **Pending Tracking**: `pending:{id}` → Transaction hash for pending transactions
 
 ### Database Location
@@ -508,7 +562,8 @@ Value: {
   "private_key": "base58_private_key",
   "created_at": "2024-01-01T12:00:00Z",
   "expires_at": "2024-01-01T12:00:00Z",
-  "last_used": "2024-01-01T12:00:00Z"
+  "last_used": "2024-01-01T12:00:00Z",
+  "accumulated_credits": 0
 }
 ```
 
@@ -521,12 +576,14 @@ The application provides comprehensive logging with Unicode symbols for enhanced
 - **🎯 Transaction Processing**: Daily target generation, category selection, probability calculations
 - **💰 Financial Operations**: Balance monitoring, funding operations, SOL transfers
 - **🔑 Key Management**: User key pool operations, keypair loading, expiry management
+- **💳 Credit Management**: Accumulated credits tracking, credit claiming, expired user processing
 - **📊 Statistics & Analytics**: Daily stats, pool statistics, transaction counts
 - **✅ Success Operations**: Successful transactions, confirmations, completions
 - **❌ Error Handling**: Failed operations, error recovery, warnings
 - **🔄 Processing**: Ongoing operations, state changes, cleanup tasks
 - **📁 File Operations**: IPFS uploads, data generation, storage operations
 - **⏰ Scheduling**: Cron operations, timing, intervals
+- **🗑️ Cleanup Operations**: Expired user removal, database cleanup, resource management
 
 ### Detailed Log Output Example
 ```
