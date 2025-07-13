@@ -31,6 +31,7 @@ pub struct SolanaConfig {
     pub keypair_file: String, // Base58 encoded private key
     pub program_id: String,
     pub commitment: String,
+    pub token_mint_address: String,
     pub agents: Vec<String>, // Array of agent private keys (base58 encoded)
     pub categories_supported: HashMap<String, Vec<String>>,
 }
@@ -216,6 +217,9 @@ impl AppConfig {
 
         let commitment = env::var("COMMITMENT").unwrap_or_else(|_| "confirmed".to_string());
 
+        let token_mint_address = env::var("TOKEN_MINT_ADDRESS")
+            .unwrap_or_else(|_| "11111111111111111111111111111112".to_string());
+
         let instruction_data = env::var("INSTRUCTION_DATA").unwrap_or_default();
 
         // Load agent private keys from environment (comma-separated)
@@ -255,6 +259,7 @@ impl AppConfig {
                 keypair_file,
                 program_id: program_id.clone(),
                 commitment,
+                token_mint_address,
                 agents,
                 categories_supported,
             },
@@ -310,6 +315,7 @@ impl AppConfig {
                 keypair_file: "your_keypair_file_here".to_string(),
                 program_id: "11111111111111111111111111111112".to_string(),
                 commitment: "confirmed".to_string(),
+                token_mint_address: "your_token_mint_address_here".to_string(),
                 agents: vec!["your_agent_private_key_here".to_string()],
                 categories_supported,
             },

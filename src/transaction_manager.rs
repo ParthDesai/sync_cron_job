@@ -98,6 +98,55 @@ impl TransactionManager {
             }
         } else {
             log::info!("⏭️ Skipping transaction this cycle (random selection)");
+
+            // Instead of skipping entirely, try to claim credits for a user with accumulated credits
+            match self.database.get_random_user_with_credits().await {
+                Ok(Some(user_with_credits)) => {
+                    log::info!(
+                        "💳 Attempting to claim credits for user {} with {} accumulated credits",
+                        user_with_credits.pubkey,
+                        user_with_credits.accumulated_credits
+                    );
+
+                    match self.solana_client.claim_credits(&user_with_credits).await {
+                        Ok((signature, new_accumulated_credits)) => {
+                            log::info!(
+                                "✅ Successfully claimed credits for user {}, tx hash: {}",
+                                user_with_credits.pubkey,
+                                signature
+                            );
+
+                            // Update the user's accumulated credits to 0 after successful claim
+                            if let Err(e) = self
+                                .database
+                                .update_user_accumulated_credits(
+                                    &user_with_credits.id,
+                                    new_accumulated_credits,
+                                )
+                                .await
+                            {
+                                log::error!(
+                                    "❌ Failed to reset accumulated credits after claim: {}",
+                                    e
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "❌ Failed to claim credits for user {}: {}",
+                                user_with_credits.pubkey,
+                                e
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    log::info!("💳 No users with accumulated credits > 0 available for claiming");
+                }
+                Err(e) => {
+                    log::error!("❌ Failed to get users with accumulated credits: {}", e);
+                }
+            }
         }
 
         // Update daily transaction count and log statistics

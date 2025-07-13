@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Solana dependencies
+anchor-spl = { version = "0.31.1" }
 anchor-client = { version = "0.31.1", features = ["async"]}
 sync_contract = { version = "0.1.0", git = "https://github.com/ParthDesai/sync_contract", branch = "main" }
 

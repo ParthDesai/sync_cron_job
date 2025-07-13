@@ -38,6 +38,7 @@ pub struct UserKeyRecord {
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub last_used: Option<DateTime<Utc>>,
+    pub accumulated_credits: u128,
 }
 
 impl UserKeyRecord {
@@ -50,6 +51,7 @@ impl UserKeyRecord {
             created_at: now,
             expires_at,
             last_used: None,
+            accumulated_credits: 0,
         }
     }
 
@@ -490,5 +492,80 @@ impl Database {
         let available_keys = total_keys - expired_keys;
 
         Ok((total_keys, available_keys, expired_keys))
+    }
+
+    /// Update accumulated credits for a user key
+    pub async fn update_user_accumulated_credits(
+        &self,
+        user_key_id: &str,
+        credits: u128,
+    ) -> Result<()> {
+        let key = format!("user_key:{}", user_key_id);
+
+        // Get the existing user key record
+        match self.db.get(&key)? {
+            Some(bytes) => {
+                let mut user_key: UserKeyRecord = serde_json::from_slice(&bytes)?;
+                user_key.accumulated_credits = credits;
+
+                // Update the record
+                let serialized = serde_json::to_vec(&user_key)?;
+                self.db.insert(&key, serialized)?;
+                self.db.flush_async().await?;
+
+                log::info!(
+                    "💰 Updated accumulated credits for user {} to {} credits",
+                    user_key.pubkey,
+                    credits
+                );
+
+                Ok(())
+            }
+            None => Err(SyncCronError::Config(format!(
+                "User key with id {} not found",
+                user_key_id
+            ))),
+        }
+    }
+
+    /// Get users with accumulated credits > 0
+    pub async fn get_users_with_accumulated_credits(&self) -> Result<Vec<UserKeyRecord>> {
+        let mut users_with_credits = Vec::new();
+
+        for result in self.db.scan_prefix("user_key:") {
+            let (_, record_bytes) = result?;
+            if let Ok(record) = serde_json::from_slice::<UserKeyRecord>(&record_bytes) {
+                if record.accumulated_credits > 0 && !record.is_expired() {
+                    users_with_credits.push(record);
+                }
+            }
+        }
+
+        log::info!(
+            "💳 Found {} users with accumulated credits > 0",
+            users_with_credits.len()
+        );
+
+        Ok(users_with_credits)
+    }
+
+    /// Get a random user with accumulated credits > 0
+    pub async fn get_random_user_with_credits(&self) -> Result<Option<UserKeyRecord>> {
+        let users_with_credits = self.get_users_with_accumulated_credits().await?;
+
+        if users_with_credits.is_empty() {
+            return Ok(None);
+        }
+
+        let random_index = rand::thread_rng().gen_range(0..users_with_credits.len());
+        let selected_user = users_with_credits[random_index].clone();
+
+        log::info!(
+            "🎲 Selected random user with credits: {} (credits: {})",
+            selected_user.pubkey,
+            selected_user.accumulated_credits
+        );
+
+        Ok(Some(selected_user))
     }
 }

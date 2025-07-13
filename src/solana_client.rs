@@ -3,26 +3,21 @@ use crate::database::Database;
 use crate::errors::{Result, SyncCronError};
 use crate::pinata_client::PinataClient;
 use anchor_client::anchor_lang::prelude::System;
-use anchor_client::anchor_lang::solana_program::system_program;
 use anchor_client::anchor_lang::Id;
 use anchor_client::solana_client::rpc_client::RpcClient;
-use anchor_client::solana_sdk::keccak;
 use anchor_client::solana_sdk::{
-    commitment_config::CommitmentConfig,
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signature},
-    signer::Signer,
-    system_instruction,
+    commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
     transaction::Transaction,
 };
+use anchor_client::solana_sdk::{keccak, system_instruction};
 use anchor_client::{Client, Cluster};
-use rand::rngs::OsRng;
+use anchor_spl::associated_token::spl_associated_token_account;
+use anchor_spl::token_2022::spl_token_2022;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shellexpand;
-use sync_contract::types::UserConfig;
 use std::str::FromStr;
+use sync_contract::types::UserConfig;
 
 pub struct SolanaClient {
     rpc_client: RpcClient,
@@ -321,10 +316,18 @@ impl SolanaClient {
             rate_data_signature.to_string()
         );
 
-        let user_config_content: UserConfig = program
-            .account(user_config.clone()).await?;
+        let user_config_content: UserConfig = program.account(user_config.clone()).await?;
 
         let user_accumulated_credits = user_config_content.accumulated_credits;
+
+        // Update the user's accumulated credits in the database
+        if let Err(e) = self
+            .database
+            .update_user_accumulated_credits(&user_key_record.id, user_accumulated_credits)
+            .await
+        {
+            log::error!("❌ Failed to update accumulated credits in database: {}", e);
+        }
 
         // Both transactions are confirmed when we reach this point
         Ok(TransactionResult {
@@ -426,6 +429,94 @@ impl SolanaClient {
             // Give a low rating (0-79)
             rng.gen_range(0..=79)
         }
+    }
+
+    /// Claim accumulated credits for a user
+    pub async fn claim_credits(
+        &self,
+        user_key_record: &crate::database::UserKeyRecord,
+    ) -> Result<(String, u128)> {
+        // Load the master keypair for paying transaction fees
+        let master_keypair = self.load_keypair(&self.config.keypair_file)?;
+
+        // Load the user keypair from the stored private key
+        let user = Self::load_keypair_from_private_key_static(&user_key_record.private_key)?;
+
+        // Fund user only if balance is below 0.01 SOL
+        self.fund_user_if_needed(&master_keypair, &user.pubkey())
+            .await?;
+
+        let cluster = Cluster::from_str(&self.rpc_client.url())?;
+        let client =
+            Client::new_with_options(cluster, &master_keypair, CommitmentConfig::confirmed());
+
+        let program_id = Pubkey::from_str(&self.config.program_id).unwrap();
+        let program = client.program(program_id).unwrap();
+
+        let (user_config, _) = Pubkey::find_program_address(
+            &[
+                b"sync_program".as_ref(),
+                b"user_config".as_ref(),
+                user.pubkey().as_ref(),
+            ],
+            &program.id(),
+        );
+
+        log::info!(
+            "💳 Claiming {} credits for user {}",
+            user_key_record.accumulated_credits,
+            user.pubkey()
+        );
+
+        // Get the program state PDA
+        let (program_state, _) = Pubkey::find_program_address(
+            &[b"sync_program".as_ref(), b"global_state".as_ref()],
+            &program.id(),
+        );
+
+        // Get the token mint address
+        let token_mint = Pubkey::from_str(&self.config.token_mint_address).unwrap();
+
+        // Create a placeholder associated token account address
+        // This would normally be calculated using the SPL associated token account program
+        let user_token_account =
+            spl_associated_token_account::get_associated_token_address_with_program_id(
+                &user.pubkey(),
+                &token_mint,
+                &spl_token_2022::id(),
+            );
+
+        // Call ClaimCredits instruction - waits for confirmation
+        let claim_credits_signature = program
+            .request()
+            .accounts(sync_contract::accounts::ClaimCredits {
+                program_state,
+                mint: token_mint,
+                token_account: user_token_account,
+                user_config,
+                signer: user.pubkey(),
+                token_program: spl_token_2022::id(),
+                associated_token_program: spl_associated_token_account::id(),
+                system_program: System::id(),
+            })
+            .args(sync_contract::instruction::ClaimCredits {})
+            .payer(&user)
+            .send()
+            .await?;
+
+        let user_config_content: UserConfig = program.account(user_config.clone()).await?;
+
+        log::info!(
+            "✅ Successfully claimed credits for user {}, tx hash: {}, new accumulated credits: {}",
+            user.pubkey(),
+            claim_credits_signature.to_string(),
+            user_config_content.accumulated_credits
+        );
+
+        Ok((
+            claim_credits_signature.to_string(),
+            user_config_content.accumulated_credits,
+        ))
     }
 
     // Utility method to load multiple keypairs from private keys

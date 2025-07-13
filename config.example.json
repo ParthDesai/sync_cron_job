@@ -11,6 +11,7 @@
   "solana_config": {
     "keypair_file": "<your_keypair_path_here>",
     "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
+    "token_mint_address": "5oQf8sZdiMvzrBAdDk6M1m1BZEhYPD6FqHnDdSmHWUAe",
     "commitment": "confirmed",
     "agents": [
       "63TndSRw67EJEmQxPNUNY5x1NhYs3LnjLRKTzj89zZwpUGT2rnQ1x1ZPqj3i6TUSP6VAUACf8GCCxgmDxAcZnaW6",
