@@ -391,11 +391,47 @@ impl Database {
                 keys_to_remove
             );
 
-            // Remove oldest keys first
-            for i in 0..keys_to_remove {
-                if let Some(key_to_remove) = current_keys.get(i) {
-                    self.remove_user_key(&key_to_remove.id).await?;
-                    log::info!("❌ Removed excess user key: {}", key_to_remove.pubkey);
+            // Separate keys with and without accumulated credits
+            let mut keys_without_credits: Vec<&UserKeyRecord> = current_keys
+                .iter()
+                .filter(|key| key.accumulated_credits == 0)
+                .collect();
+
+            let keys_with_credits: Vec<&UserKeyRecord> = current_keys
+                .iter()
+                .filter(|key| key.accumulated_credits > 0)
+                .collect();
+
+            // Sort keys without credits by creation time (oldest first)
+            keys_without_credits.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+            let mut removed_count = 0;
+
+            // First, remove keys without accumulated credits
+            for key_to_remove in keys_without_credits.iter().take(keys_to_remove) {
+                self.remove_user_key(&key_to_remove.id).await?;
+                log::info!(
+                    "❌ Removed excess user key (no credits): {}",
+                    key_to_remove.pubkey
+                );
+                removed_count += 1;
+            }
+
+            // If we still need to remove more keys and only keys with credits remain
+            if removed_count < keys_to_remove {
+                let remaining_to_remove = keys_to_remove - removed_count;
+                log::warn!(
+                "⚠️ Need to remove {} more keys, but only {} keys with accumulated credits remain. Preserving keys with credits.",
+                remaining_to_remove,
+                keys_with_credits.len()
+            );
+
+                for key_with_credits in &keys_with_credits {
+                    log::info!(
+                        "💰 Preserving user key with {} accumulated credits: {}",
+                        key_with_credits.accumulated_credits,
+                        key_with_credits.pubkey
+                    );
                 }
             }
         } else {

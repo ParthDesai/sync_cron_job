@@ -16,6 +16,8 @@ pub struct AppConfig {
     pub user_key_pool_size: u32,
     pub high_rating_percentage: f64,
     pub cron_schedule_in_minutes: u32,
+    pub min_file_size_bytes: u32,
+    pub max_file_size_bytes: u32,
     pub solana_config: SolanaConfig,
     pub pinata_config: PinataConfig,
 }
@@ -27,13 +29,19 @@ pub struct PinataConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryConfig {
+    pub secondary_categories: Vec<String>,
+    pub file_extensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolanaConfig {
     pub keypair_file: String, // Base58 encoded private key
     pub program_id: String,
     pub commitment: String,
     pub token_mint_address: String,
     pub agents: Vec<String>, // Array of agent private keys (base58 encoded)
-    pub categories_supported: HashMap<String, Vec<String>>,
+    pub categories_supported: HashMap<String, CategoryConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,7 +79,7 @@ impl AppConfig {
             secondary_category_size
         );
 
-        for (primary_category, secondary_categories) in &self.solana_config.categories_supported {
+        for (primary_category, category_config) in &self.solana_config.categories_supported {
             // Check primary category size
             if primary_category.as_bytes().len() > primary_category_size {
                 return Err(SyncCronError::Config(format!(
@@ -83,7 +91,7 @@ impl AppConfig {
             }
 
             // Check each secondary category size
-            for secondary_category in secondary_categories {
+            for secondary_category in &category_config.secondary_categories {
                 if secondary_category.as_bytes().len() > secondary_category_size {
                     return Err(SyncCronError::Config(format!(
                         "Secondary category '{}' exceeds maximum size of {} bytes (actual: {} bytes)",
@@ -98,8 +106,8 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Get a random primary category and one of its secondary categories
-    pub fn get_random_categories(&self) -> Result<(String, String)> {
+    /// Get a random primary category, one of its secondary categories, and a random file extension
+    pub fn get_random_categories(&self) -> Result<(String, String, String)> {
         if self.solana_config.categories_supported.is_empty() {
             return Err(SyncCronError::Config(
                 "No categories configured in categories_supported".to_string(),
@@ -116,14 +124,14 @@ impl AppConfig {
         // Select a random primary category
         let primary_category = primary_categories[rng.gen_range(0..primary_categories.len())];
 
-        // Get secondary categories for the selected primary category
-        let secondary_categories = self
+        // Get category config for the selected primary category
+        let category_config = self
             .solana_config
             .categories_supported
             .get(primary_category)
             .unwrap();
 
-        if secondary_categories.is_empty() {
+        if category_config.secondary_categories.is_empty() {
             return Err(SyncCronError::Config(format!(
                 "No secondary categories found for primary category '{}'",
                 primary_category
@@ -131,16 +139,31 @@ impl AppConfig {
         }
 
         // Select a random secondary category
-        let secondary_category =
-            &secondary_categories[rng.gen_range(0..secondary_categories.len())];
+        let secondary_category = &category_config.secondary_categories
+            [rng.gen_range(0..category_config.secondary_categories.len())];
+
+        // Select a random file extension
+        if category_config.file_extensions.is_empty() {
+            return Err(SyncCronError::Config(format!(
+                "No file extensions found for primary category '{}'",
+                primary_category
+            )));
+        }
+        let file_extension = &category_config.file_extensions
+            [rng.gen_range(0..category_config.file_extensions.len())];
 
         log::debug!(
-            "🎯 Selected random categories: Primary='{}', Secondary='{}'",
+            "🎯 Selected random categories: Primary='{}', Secondary='{}', Extension='{}'",
             primary_category,
-            secondary_category
+            secondary_category,
+            file_extension
         );
 
-        Ok((primary_category.clone(), secondary_category.clone()))
+        Ok((
+            primary_category.clone(),
+            secondary_category.clone(),
+            file_extension.clone(),
+        ))
     }
 
     fn load_from_file() -> Result<Self> {
@@ -209,6 +232,16 @@ impl AppConfig {
                 SyncCronError::Config(format!("Invalid cron schedule in minutes: {}", e))
             })?;
 
+        let min_file_size_bytes = env::var("MIN_FILE_SIZE_BYTES")
+            .unwrap_or_else(|_| "512".to_string())
+            .parse::<u32>()
+            .map_err(|e| SyncCronError::Config(format!("Invalid min file size bytes: {}", e)))?;
+
+        let max_file_size_bytes = env::var("MAX_FILE_SIZE_BYTES")
+            .unwrap_or_else(|_| "4096".to_string())
+            .parse::<u32>()
+            .map_err(|e| SyncCronError::Config(format!("Invalid max file size bytes: {}", e)))?;
+
         let keypair_file = env::var("KEYPAIR_FILE")
             .unwrap_or_else(|_| "your_keypair_private_key_here".to_string());
 
@@ -242,8 +275,14 @@ impl AppConfig {
 
         // Create default categories if not provided via environment
         let mut categories_supported = HashMap::new();
-        categories_supported.insert("general".to_string(), vec!["misc".to_string()]);
-        log::debug!("🏷️ Created default categories: general -> misc");
+        categories_supported.insert(
+            "general".to_string(),
+            CategoryConfig {
+                secondary_categories: vec!["misc".to_string()],
+                file_extensions: vec!["txt".to_string()],
+            },
+        );
+        log::debug!("🏷️ Created default categories: general -> misc (txt)");
 
         Ok(AppConfig {
             solana_rpc_url,
@@ -255,6 +294,8 @@ impl AppConfig {
             user_key_pool_size,
             high_rating_percentage,
             cron_schedule_in_minutes,
+            min_file_size_bytes,
+            max_file_size_bytes,
             solana_config: SolanaConfig {
                 keypair_file,
                 program_id: program_id.clone(),
@@ -273,27 +314,36 @@ impl AppConfig {
         let mut categories_supported = HashMap::new();
         categories_supported.insert(
             "technology".to_string(),
-            vec![
-                "ai".to_string(),
-                "blockchain".to_string(),
-                "software".to_string(),
-            ],
+            CategoryConfig {
+                secondary_categories: vec![
+                    "ai".to_string(),
+                    "blockchain".to_string(),
+                    "software".to_string(),
+                ],
+                file_extensions: vec!["json".to_string(), "txt".to_string(), "csv".to_string()],
+            },
         );
         categories_supported.insert(
             "science".to_string(),
-            vec![
-                "physics".to_string(),
-                "chemistry".to_string(),
-                "biology".to_string(),
-            ],
+            CategoryConfig {
+                secondary_categories: vec![
+                    "physics".to_string(),
+                    "chemistry".to_string(),
+                    "biology".to_string(),
+                ],
+                file_extensions: vec!["json".to_string(), "xml".to_string(), "txt".to_string()],
+            },
         );
         categories_supported.insert(
             "business".to_string(),
-            vec![
-                "finance".to_string(),
-                "marketing".to_string(),
-                "strategy".to_string(),
-            ],
+            CategoryConfig {
+                secondary_categories: vec![
+                    "finance".to_string(),
+                    "marketing".to_string(),
+                    "strategy".to_string(),
+                ],
+                file_extensions: vec!["json".to_string(), "csv".to_string(), "xlsx".to_string()],
+            },
         );
 
         log::debug!(
@@ -311,6 +361,8 @@ impl AppConfig {
             user_key_pool_size: 100,
             high_rating_percentage: 0.8,
             cron_schedule_in_minutes: 15,
+            min_file_size_bytes: 512,
+            max_file_size_bytes: 4096,
             solana_config: SolanaConfig {
                 keypair_file: "your_keypair_file_here".to_string(),
                 program_id: "11111111111111111111111111111112".to_string(),

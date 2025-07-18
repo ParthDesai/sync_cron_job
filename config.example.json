@@ -8,6 +8,8 @@
   "user_key_pool_size": 100,
   "high_rating_percentage": 0.8,
   "cron_schedule_in_minutes": 1,
+  "min_file_size_bytes": 512,
+  "max_file_size_bytes": 4096,
   "solana_config": {
     "keypair_file": "<your_keypair_path_here>",
     "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
@@ -21,41 +23,81 @@
       "41gCmyVQojQpxpK9zGoh6GUgC4sUMWEYLaiKkBns8ak7wTNTjoXBvaDURw1t7hSzptpGxqCTEZFZzMiznhGkNgCh"
     ],
     "categories_supported": {
-      "technology": [
-        "ai",
-        "blockchain",
-        "software",
-        "hardware",
-        "mobile"
-      ],
-      "science": [
-        "physics",
-        "chemistry",
-        "biology",
-        "mathematics",
-        "research"
-      ],
-      "business": [
-        "finance",
-        "marketing",
-        "strategy",
-        "management",
-        "consulting"
-      ],
-      "education": [
-        "teaching",
-        "learning",
-        "curriculum",
-        "assessment",
-        "training"
-      ],
-      "health": [
-        "medicine",
-        "wellness",
-        "nutrition",
-        "fitness",
-        "mental"
-      ]
+      "technology": {
+        "secondary_categories": [
+          "ai",
+          "blockchain",
+          "software",
+          "hardware",
+          "mobile"
+        ],
+        "file_extensions": [
+          "json",
+          "txt",
+          "csv",
+          "xml"
+        ]
+      },
+      "science": {
+        "secondary_categories": [
+          "physics",
+          "chemistry",
+          "biology",
+          "mathematics",
+          "research"
+        ],
+        "file_extensions": [
+          "json",
+          "xml",
+          "txt",
+          "csv"
+        ]
+      },
+      "business": {
+        "secondary_categories": [
+          "finance",
+          "marketing",
+          "strategy",
+          "management",
+          "consulting"
+        ],
+        "file_extensions": [
+          "json",
+          "csv",
+          "xlsx",
+          "txt"
+        ]
+      },
+      "education": {
+        "secondary_categories": [
+          "teaching",
+          "learning",
+          "curriculum",
+          "assessment",
+          "training"
+        ],
+        "file_extensions": [
+          "json",
+          "txt",
+          "pdf",
+          "docx"
+        ]
+      },
+      "health": {
+        "secondary_categories": [
+          "medicine",
+          "wellness",
+          "nutrition",
+          "fitness",
+          "mental"
+        ],
+        "file_extensions": [
+          "json",
+          "txt",
+          "csv",
+          "xml"
+        ]
+      }
     }
   },
   "pinata_config": {

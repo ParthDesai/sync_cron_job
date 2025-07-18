@@ -66,12 +66,30 @@ impl SolanaClient {
         }
     }
 
-    fn generate_random_file_name_and_data(&self) -> Result<(String, Vec<u8>)> {
-        let file_name = String::from("data_to_be_rated.txt");
-        let mut data = vec![0; 1024];
-        // Fill data vector with random data
+    fn generate_random_file_name_and_data(
+        &self,
+        primary_category: &str,
+        secondary_category: &str,
+        file_extension: &str,
+    ) -> Result<(String, Vec<u8>)> {
+        // Generate filename from categories
+        let file_name = format!(
+            "{}_{}.{}",
+            primary_category, secondary_category, file_extension
+        );
+
+        // Generate random file size between min and max
         let mut rng = rand::thread_rng();
+        let file_size = rng
+            .gen_range(self.app_config.min_file_size_bytes..=self.app_config.max_file_size_bytes)
+            as usize;
+
+        let mut data = vec![0; file_size];
+        // Fill data vector with random data
         rng.fill(&mut data[..]);
+
+        log::info!("📄 Generated file: {} ({} bytes)", file_name, file_size);
+
         Ok((file_name, data))
     }
 
@@ -195,18 +213,32 @@ impl SolanaClient {
         let program_id = Pubkey::from_str(&self.config.program_id).unwrap();
         let program = client.program(program_id).unwrap();
 
-        let (file_name, data) = self.generate_random_file_name_and_data()?;
+        // Get random categories and file extension for the transaction first
+        let (primary_category, secondary_category, file_extension) =
+            self.app_config.get_random_categories()?;
+        log::info!(
+            "🎯 Selected categories - Primary: '{}', Secondary: '{}', Extension: '{}'",
+            primary_category,
+            secondary_category,
+            file_extension
+        );
+
+        let (file_name, data) = self.generate_random_file_name_and_data(
+            &primary_category,
+            &secondary_category,
+            &file_extension,
+        )?;
         let upload_result = self
             .pinata_client
             .upload_bytes(data, &file_name, None)
             .await?;
-        log::info!("📁 Uploaded file to Pinata: {}", upload_result.public_url);
+        log::info!("📁 Uploaded file to Pinata: {}", upload_result.gateway_url);
 
         let (data_submission, _) = Pubkey::find_program_address(
             &[
                 b"sync_program".as_ref(),
                 b"data_submission".as_ref(),
-                keccak::hash(upload_result.public_url.as_bytes()).as_ref(),
+                keccak::hash(upload_result.cid.as_bytes()).as_ref(),
             ],
             &program_id,
         );
@@ -228,14 +260,6 @@ impl SolanaClient {
         self.fund_user_if_needed(&master_keypair, &user.pubkey())
             .await?;
 
-        // Get random categories for the transaction
-        let (primary_category, secondary_category) = self.app_config.get_random_categories()?;
-        log::info!(
-            "🎯 Selected categories - Primary: '{}', Secondary: '{}'",
-            primary_category,
-            secondary_category
-        );
-
         let (user_config, _) = Pubkey::find_program_address(
             &[
                 b"sync_program".as_ref(),
@@ -255,7 +279,7 @@ impl SolanaClient {
                 user_config,
             })
             .args(sync_contract::instruction::SubmitData {
-                data_link: upload_result.public_url.clone(),
+                data_link: upload_result.cid.clone(),
                 primary_category,
                 secondary_category,
             })
@@ -303,7 +327,7 @@ impl SolanaClient {
                 user_config,
             })
             .args(sync_contract::instruction::RateData {
-                data_link: upload_result.public_url.clone(),
+                data_link: upload_result.cid.clone(),
                 passed: true,
                 rating: random_rating,
             })
@@ -339,7 +363,7 @@ impl SolanaClient {
             slot: None,
             block_hash: None,
             confirmation_status: "confirmed".to_string(),
-            ipfs_url: upload_result.public_url,
+            ipfs_url: upload_result.gateway_url,
             error: None,
         })
     }

@@ -30,7 +30,6 @@ pub struct PinataUploadResponse {
 #[derive(Debug, Clone)]
 pub struct PinataUploadResult {
     pub cid: String,
-    pub public_url: String,
     pub gateway_url: String,
     pub ipfs_url: String,
 }
@@ -87,7 +86,7 @@ impl PinataClient {
             .mime_str(&detected_mime_type)
             .map_err(|e| SyncCronError::Network(format!("Failed to create multipart: {}", e)))?;
 
-        let form = Form::new().part("file", part).text("network", "public");
+        let form = Form::new().part("file", part).text("network", "private");
 
         // Make the upload request
         let response = self
@@ -141,7 +140,6 @@ impl PinataClient {
         // Create the result with various URL formats
         let result = PinataUploadResult {
             cid: upload_response.cid.clone(),
-            public_url: format!("{}/ipfs/{}", self.gateway_url, upload_response.cid),
             gateway_url: format!("{}/ipfs/{}", self.gateway_url, upload_response.cid),
             ipfs_url: format!("ipfs://{}", upload_response.cid),
         };
