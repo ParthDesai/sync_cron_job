@@ -310,7 +310,7 @@ impl SolanaClient {
             &program.id(),
         );
 
-        let random_rating = self.generate_random_rating();
+        let (random_rating, passed) = self.generate_random_rating();
         log::info!(
             "💎 Generated random rating: {} by agent: {}",
             random_rating,
@@ -328,7 +328,7 @@ impl SolanaClient {
             })
             .args(sync_contract::instruction::RateData {
                 data_link: upload_result.cid.clone(),
-                passed: true,
+                passed,
                 rating: random_rating,
             })
             .payer(&agent)
@@ -439,19 +439,19 @@ impl SolanaClient {
     }
 
     // Generate a random rating based on the configured percentage
-    fn generate_random_rating(&self) -> u8 {
+    fn generate_random_rating(&self) -> (u8, bool) {
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
-        // Decide whether to give a high rating (>80) or low rating (<=80)
+        // Decide whether to give a high rating (>=60) or low rating (<60)
         let random_percentage: f64 = rng.gen();
 
         if random_percentage < self.app_config.high_rating_percentage {
-            // Give a high rating (81-100)
-            rng.gen_range(81..=100)
+            // Give a high rating (60-100)
+            (rng.gen_range(60..=100), true)
         } else {
-            // Give a low rating (0-79)
-            rng.gen_range(0..=79)
+            // Give a low rating (0-59)
+            (rng.gen_range(0..=59), false)
         }
     }
 
