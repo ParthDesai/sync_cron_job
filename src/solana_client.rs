@@ -72,11 +72,15 @@ impl SolanaClient {
         secondary_category: &str,
         file_extension: &str,
     ) -> Result<(String, Vec<u8>)> {
-        // Generate filename from categories
-        let file_name = format!(
-            "{}_{}.{}",
-            primary_category, secondary_category, file_extension
-        );
+        // Generate filename from categories, handling empty secondary category
+        let file_name = if secondary_category.is_empty() {
+            format!("{}.{}", primary_category, file_extension)
+        } else {
+            format!(
+                "{}_{}.{}",
+                primary_category, secondary_category, file_extension
+            )
+        };
 
         // Generate random file size between min and max
         let mut rng = rand::thread_rng();

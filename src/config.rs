@@ -131,16 +131,14 @@ impl AppConfig {
             .get(primary_category)
             .unwrap();
 
-        if category_config.secondary_categories.is_empty() {
-            return Err(SyncCronError::Config(format!(
-                "No secondary categories found for primary category '{}'",
-                primary_category
-            )));
-        }
-
-        // Select a random secondary category
-        let secondary_category = &category_config.secondary_categories
-            [rng.gen_range(0..category_config.secondary_categories.len())];
+        // Select a random secondary category or use empty string if none available
+        let secondary_category = if category_config.secondary_categories.is_empty() {
+            String::new() // Return empty string if no secondary categories
+        } else {
+            category_config.secondary_categories
+                [rng.gen_range(0..category_config.secondary_categories.len())]
+            .clone()
+        };
 
         // Select a random file extension
         if category_config.file_extensions.is_empty() {
@@ -155,13 +153,17 @@ impl AppConfig {
         log::debug!(
             "🎯 Selected random categories: Primary='{}', Secondary='{}', Extension='{}'",
             primary_category,
-            secondary_category,
+            if secondary_category.is_empty() {
+                "<empty>"
+            } else {
+                &secondary_category
+            },
             file_extension
         );
 
         Ok((
             primary_category.clone(),
-            secondary_category.clone(),
+            secondary_category,
             file_extension.clone(),
         ))
     }
