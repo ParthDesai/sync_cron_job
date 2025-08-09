@@ -4,6 +4,7 @@ mod errors;
 mod pinata_client;
 mod solana_client;
 mod transaction_manager;
+mod solana_tx_fetcher;
 
 use config::AppConfig;
 use database::Database;
@@ -13,19 +14,43 @@ use solana_client::SolanaClient;
 use transaction_manager::TransactionManager;
 
 use chrono::Utc;
+use clap::{Arg, ArgMatches, Command};
 use std::sync::Arc;
 use tokio_cron_scheduler::{Job, JobScheduler};
+
+use crate::solana_tx_fetcher::SolanaTxFetcher;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    log::info!("🚀 Starting Solana Sync Cron Job...");
+    // Parse command line arguments
+    let matches = Command::new("sync_cron")
+        .version("0.1.0")
+        .about("Solana Sync Cron Job and Transaction Monitor")
+        .subcommand(
+            Command::new("fetch-tx-data")
+                .about("Fetch transaction data from blockchain for sync_contract")
+                .arg(
+                    Arg::new("cursor")
+                        .long("cursor")
+                        .help("Block number or transaction signature to start from (if not provided, starts from beginning)")
+                        .value_name("CURSOR")
+                )
+        )
+        .get_matches();
 
     // Load configuration
     let config = AppConfig::load()?;
     log::info!("✅ Configuration loaded successfully");
+
+    // Handle subcommands
+    if let Some(sub_matches) = matches.subcommand_matches("fetch-tx-data") {
+        return handle_fetch_tx_data(sub_matches, config).await;
+    }
+
+    log::info!("🚀 Starting Solana Sync Cron Job...");
 
     // Initialize database
     let database = Database::new(&config.database_path).await?;
@@ -121,6 +146,27 @@ async fn main() -> Result<()> {
 
     log::info!("🛑 Shutting down...");
     scheduler.shutdown().await?;
+
+    Ok(())
+}
+
+async fn handle_fetch_tx_data(matches: &ArgMatches, config: AppConfig) -> Result<()> {
+    log::info!("🔍 Fetching transaction data for sync_contract...");
+
+    let solana_tx_fetcher = SolanaTxFetcher::new(
+        &config.solana_rpc_url,
+        config.solana_config.clone()
+    );
+
+    
+
+    // Fetch and process transaction data
+    let result = solana_tx_fetcher
+        .fetch_sync_contract_transactions(None, None, Some(10))
+        .await?;
+
+    // Output JSON result
+    println!("{}", serde_json::to_string_pretty(&result)?);
 
     Ok(())
 }

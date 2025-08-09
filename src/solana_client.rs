@@ -3,8 +3,10 @@ use crate::database::Database;
 use crate::errors::{Result, SyncCronError};
 use crate::pinata_client::PinataClient;
 use anchor_client::anchor_lang::prelude::System;
-use anchor_client::anchor_lang::Id;
-use anchor_client::solana_client::rpc_client::RpcClient;
+use anchor_client::anchor_lang::{
+    Id,
+};
+use anchor_client::solana_client::rpc_client::{RpcClient};
 use anchor_client::solana_sdk::{
     commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
     transaction::Transaction,
@@ -17,7 +19,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shellexpand;
 use std::str::FromStr;
-use sync_contract::types::UserConfig;
+use sync_contract::types::{UserConfig};
 
 pub struct SolanaClient {
     rpc_client: RpcClient,
