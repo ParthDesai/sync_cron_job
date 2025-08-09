@@ -3,10 +3,8 @@ use crate::database::Database;
 use crate::errors::{Result, SyncCronError};
 use crate::pinata_client::PinataClient;
 use anchor_client::anchor_lang::prelude::System;
-use anchor_client::anchor_lang::{
-    Id,
-};
-use anchor_client::solana_client::rpc_client::{RpcClient};
+use anchor_client::anchor_lang::Id;
+use anchor_client::solana_client::nonblocking::rpc_client::RpcClient;
 use anchor_client::solana_sdk::{
     commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
     transaction::Transaction,
@@ -19,7 +17,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shellexpand;
 use std::str::FromStr;
-use sync_contract::types::{UserConfig};
+use sync_contract::types::UserConfig;
 
 pub struct SolanaClient {
     rpc_client: RpcClient,
@@ -99,12 +97,12 @@ impl SolanaClient {
         Ok((file_name, data))
     }
 
-    fn transfer_funds(&self, from: &Keypair, to: &Pubkey, amount: u64) -> Result<()> {
+    async fn transfer_funds(&self, from: &Keypair, to: &Pubkey, amount: u64) -> Result<()> {
         // Create transfer instruction using system program
         let transfer_instruction = system_instruction::transfer(&from.pubkey(), to, amount);
 
         // Get recent blockhash for the transaction
-        let recent_blockhash = self.rpc_client.get_latest_blockhash()?;
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
 
         // Create and sign transaction
         let transaction = Transaction::new_signed_with_payer(
@@ -115,7 +113,9 @@ impl SolanaClient {
         );
 
         // Send and confirm transaction
-        self.rpc_client.send_and_confirm_transaction(&transaction)?;
+        self.rpc_client
+            .send_and_confirm_transaction(&transaction)
+            .await?;
 
         log::info!(
             "💸 Transferred {} lamports from {} to {}",
@@ -138,7 +138,8 @@ impl SolanaClient {
 
         if balance < MIN_BALANCE_LAMPORTS {
             let funding_amount = MIN_BALANCE_LAMPORTS * 2; // Fund with 0.02 SOL to avoid frequent funding
-            self.transfer_funds(master_keypair, user_pubkey, funding_amount)?;
+            self.transfer_funds(master_keypair, user_pubkey, funding_amount)
+                .await?;
             log::info!(
                 "💰 Funded user {} with {} lamports (balance was {})",
                 user_pubkey,
@@ -168,7 +169,8 @@ impl SolanaClient {
         let balance = self.get_balance(agent_pubkey).await?;
 
         if balance < MIN_BALANCE_LAMPORTS {
-            self.transfer_funds(master_keypair, agent_pubkey, AGENT_FUNDING_AMOUNT)?;
+            self.transfer_funds(master_keypair, agent_pubkey, AGENT_FUNDING_AMOUNT)
+                .await?;
             log::info!(
                 "💰 Funded agent {} with {} lamports (balance was {})",
                 agent_pubkey,
@@ -409,11 +411,11 @@ impl SolanaClient {
     }
 
     pub async fn get_balance(&self, pubkey: &Pubkey) -> Result<u64> {
-        Ok(self.rpc_client.get_balance(pubkey)?)
+        Ok(self.rpc_client.get_balance(pubkey).await?)
     }
 
     pub async fn get_current_slot(&self) -> Result<u64> {
-        Ok(self.rpc_client.get_slot()?)
+        Ok(self.rpc_client.get_slot().await?)
     }
 
     // Agent management methods

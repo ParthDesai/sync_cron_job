@@ -59,3 +59,5 @@ mime_guess = "2.0"
 clap = { version = "4.5", features = ["derive"] }
 
 solana-transaction-status-client-types = { version = "2.3.4" }
+
+crossterm = { version = "0.27" }

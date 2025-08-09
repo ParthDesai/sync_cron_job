@@ -3,18 +3,24 @@ mod database;
 mod errors;
 mod pinata_client;
 mod solana_client;
-mod transaction_manager;
 mod solana_tx_fetcher;
+mod transaction_manager;
 
+use anchor_client::solana_sdk::signature::Signature;
 use config::AppConfig;
 use database::Database;
 use errors::Result;
 use pinata_client::PinataClient;
 use solana_client::SolanaClient;
+use tokio::select;
+use tokio::signal::unix::{signal, SignalKind};
 use transaction_manager::TransactionManager;
 
 use chrono::Utc;
 use clap::{Arg, ArgMatches, Command};
+use errors::SyncCronError;
+use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
@@ -33,11 +39,25 @@ async fn main() -> Result<()> {
             Command::new("fetch-tx-data")
                 .about("Fetch transaction data from blockchain for sync_contract")
                 .arg(
-                    Arg::new("cursor")
-                        .long("cursor")
-                        .help("Block number or transaction signature to start from (if not provided, starts from beginning)")
-                        .value_name("CURSOR")
+                    Arg::new("before")
+                        .long("before")
+                        .help("Fetch transactions strictly before this signature")
+                        .value_name("SIGNATURE"),
                 )
+                .arg(
+                    Arg::new("until")
+                        .long("until")
+                        .help("Stop when this signature is reached")
+                        .value_name("SIGNATURE"),
+                )
+                .arg(
+                    Arg::new("output")
+                        .long("output")
+                        .short('o')
+                        .help("Output file path (must not already exist)")
+                        .value_name("FILE")
+                        .required(true),
+                ),
         )
         .get_matches();
 
@@ -153,20 +173,61 @@ async fn main() -> Result<()> {
 async fn handle_fetch_tx_data(matches: &ArgMatches, config: AppConfig) -> Result<()> {
     log::info!("🔍 Fetching transaction data for sync_contract...");
 
-    let solana_tx_fetcher = SolanaTxFetcher::new(
-        &config.solana_rpc_url,
-        config.solana_config.clone()
-    );
+    let solana_tx_fetcher =
+        SolanaTxFetcher::new(config.solana_rpc_url, config.solana_config.clone());
 
-    
+    // Parse optional signatures
+    let before_signature = if let Some(sig_str) = matches.get_one::<String>("before") {
+        match Signature::from_str(sig_str) {
+            Ok(sig) => Some(sig),
+            Err(_) => {
+                return Err(SyncCronError::Config(
+                    "Invalid --before signature provided".to_string(),
+                ))
+            }
+        }
+    } else {
+        None
+    };
+
+    let until_signature = if let Some(sig_str) = matches.get_one::<String>("until") {
+        match Signature::from_str(sig_str) {
+            Ok(sig) => Some(sig),
+            Err(_) => {
+                return Err(SyncCronError::Config(
+                    "Invalid --until signature provided".to_string(),
+                ))
+            }
+        }
+    } else {
+        None
+    };
+
+    // Prepare output file path (must not exist). Create parent directories if needed
+    let output_path_str = matches
+        .get_one::<String>("output")
+        .expect("--output is required by clap");
+    let output_path = Path::new(output_path_str);
+
+    if output_path.exists() {
+        return Err(SyncCronError::Config(format!(
+            "Output file already exists: {}",
+            output_path_str
+        )));
+    }
+
+    if let Some(parent) = output_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+    }
+
+    let file = tokio::fs::File::create_new(output_path).await?;
 
     // Fetch and process transaction data
-    let result = solana_tx_fetcher
-        .fetch_sync_contract_transactions(None, None, Some(10))
+    solana_tx_fetcher
+        .fetch_sync_contract_transactions(before_signature, until_signature, file)
         .await?;
-
-    // Output JSON result
-    println!("{}", serde_json::to_string_pretty(&result)?);
 
     Ok(())
 }

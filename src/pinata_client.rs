@@ -23,7 +23,6 @@ pub struct PinataUploadResponse {
     pub size: u64,
     pub number_of_files: u32,
     pub mime_type: String,
-    pub user_id: String,
     pub group_id: Option<String>,
 }
 
