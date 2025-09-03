@@ -12,6 +12,7 @@ path = "src/main.rs"
 anchor-spl = { version = "0.31.1" }
 anchor-client = { version = "0.31.1", features = ["async"]}
 sync_contract = { version = "0.1.0", git = "https://github.com/ParthDesai/sync_contract", branch = "main" }
+sync_contract_demo = { version = "0.1.0", git = "https://github.com/ParthDesai/sync_contract", branch = "demo_credits", package = "sync_contract" }
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }

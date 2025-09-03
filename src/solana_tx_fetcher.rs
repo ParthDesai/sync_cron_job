@@ -232,23 +232,24 @@ impl SolanaTxFetcher {
                                         USER_ACCOUNT_IN_SUBMIT_DATA
                                     };
 
+                                    let (data_link, rating, calculated_credits) = match data_submission {
+                                        Datasubmission::V1(data_submission_v1) => {
+                                            (data_submission_v1.data_link.clone(), data_submission_v1.agent_response.as_ref().and_then(|response| Some(response.rating)), data_submission_v1.agent_response.and_then(|response| Some(response.calculated_credits)))
+                                        }
+                                        Datasubmission::V2(data_submission_v2) => {
+                                            (data_submission_v2.data_link.clone(), data_submission_v2.agent_response.as_ref().and_then(|response| Some(response.rating)), data_submission_v2.agent_response.and_then(|response| Some(response.calculated_credits)))
+                                        }
+                                    };
+
                                     sync_contract_instruction =
                                         SyncContractInstruction::FileSubmission {
                                             cid: String::from_utf8(
-                                                data_submission.data_link.to_vec(),
+                                                data_link.to_vec(),
                                             )?
                                             .trim_end_matches('\0')
                                             .to_string(),
-                                            rating: data_submission
-                                                .agent_response
-                                                .as_ref()
-                                                .and_then(|response| Some(response.rating)),
-                                            credits_earned: data_submission
-                                                .agent_response
-                                                .as_ref()
-                                                .and_then(|response| {
-                                                    Some(response.calculated_credits)
-                                                }),
+                                            rating,
+                                            credits_earned: calculated_credits,
                                             user_wallet: raw_message.account_keys[(instruction
                                                 .accounts[user_account_in_submit_data])
                                                 as usize]
@@ -288,9 +289,9 @@ impl SolanaTxFetcher {
                                             block_number: sig_info.slot,
                                         };
                                 }
-                                sync_contract::instruction::DemoClaimCredits::DISCRIMINATOR => {
+                                sync_contract_demo::instruction::DemoClaimCredits::DISCRIMINATOR => {
                                     let demo_claim_credit_instruction =
-                                        sync_contract::instruction::DemoClaimCredits::deserialize(
+                                        sync_contract_demo::instruction::DemoClaimCredits::deserialize(
                                             &mut actual_data.as_ref(),
                                         )?;
                                     let (mint_account, amount) =

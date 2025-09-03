@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::config::{AppConfig, SolanaConfig};
 use crate::database::Database;
 use crate::errors::{Result, SyncCronError};
@@ -64,6 +65,26 @@ impl SolanaClient {
             database,
             app_config,
         }
+    }
+
+    fn generate_synthetic_file_name_and_data(&self, seed_file_name: String) -> Result<(String, Vec<u8>)> {
+        let synthetic_file_name = seed_file_name.rsplit_once(".").and_then(|(file_name, extension)| {
+            Some(format!("{}_synth.{}", file_name, extension))
+        }).ok_or(SyncCronError::Anyhow(anyhow::Error::msg("unable to parse seed file name")))?;
+
+        // Generate random file size between min and max
+        let mut rng = rand::thread_rng();
+        let file_size = rng
+            .gen_range(self.app_config.min_file_size_bytes..=self.app_config.max_file_size_bytes)
+            as usize;
+
+        let mut data = vec![0; file_size];
+        // Fill data vector with random data
+        rng.fill(&mut data[..]);
+
+        log::info!("🤖 Generated synthetic file: {} ({} bytes)", synthetic_file_name, file_size);
+
+        Ok((synthetic_file_name, data))
     }
 
     fn generate_random_file_name_and_data(
@@ -320,10 +341,41 @@ impl SolanaClient {
 
         let (random_rating, passed) = self.generate_random_rating();
         log::info!(
-            "💎 Generated random rating: {} by agent: {}",
+            "💎 Generated random rating: {} by agent: {} (passed: {})",
             random_rating,
+            passed,
             agent.pubkey()
         );
+
+        let synthetic_data_link = if passed {
+            let (file_name, data) = self.generate_synthetic_file_name_and_data(file_name)?;
+            let upload_result = self
+                .pinata_client
+                .upload_bytes(data, &file_name, None)
+                .await?;
+            log::info!("📁 Uploaded synthetic file to Pinata: {}", upload_result.gateway_url);
+            Some(upload_result.cid)
+        } else {
+            None
+        };
+
+        // Get the program state PDA
+        let (program_state, _) = Pubkey::find_program_address(
+            &[b"sync_program".as_ref(), b"global_state".as_ref()],
+            &program.id(),
+        );
+
+        // Get the token mint address
+        let token_mint = Pubkey::from_str(&self.config.token_mint_address).unwrap();
+
+        // Create a placeholder associated token account address
+        // This would normally be calculated using the SPL associated token account program
+        let user_token_account =
+            spl_associated_token_account::get_associated_token_address_with_program_id(
+                &user.pubkey(),
+                &token_mint,
+                &spl_token_2022::id(),
+            );
 
         // Rate data transaction - waits for confirmation
         let rate_data_signature = program
@@ -333,11 +385,20 @@ impl SolanaClient {
                 agent_config,
                 signer: agent.pubkey(),
                 user_config,
+                program_state,
+                mint: token_mint,
+                token_account: user_token_account,
+                user_account: user.pubkey(),
+                token_program: spl_token_2022::id(),
+                associated_token_program: spl_associated_token_account::id(),
+                system_program: System::id(),
             })
             .args(sync_contract::instruction::RateData {
-                data_link: upload_result.cid.clone(),
-                passed,
+                _data_link: upload_result.cid.clone(),
                 rating: random_rating,
+                synthetic_data_link,
+                is_seed_deleted: true,
+                send_tokens_immediately: true,
             })
             .payer(&agent)
             .send()
