@@ -398,7 +398,7 @@ impl SolanaClient {
                 rating: random_rating,
                 synthetic_data_link,
                 is_seed_deleted: true,
-                send_tokens_immediately: true,
+                send_tokens_immediately: false,
             })
             .payer(&agent)
             .send()
