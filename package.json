@@ -1,0 +1,11 @@
+{
+  "name": "sync_cron",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Node deps for sync_cron helpers (evm_bridge.js).",
+  "dependencies": {
+    "ethers": "^6.0.0"
+  }
+}
+
+

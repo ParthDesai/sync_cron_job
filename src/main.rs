@@ -1,6 +1,7 @@
 mod config;
 mod database;
 mod errors;
+mod evm_client;
 mod pinata_client;
 mod solana_client;
 mod solana_tx_fetcher;
@@ -9,12 +10,12 @@ mod transaction_manager;
 use anchor_client::solana_sdk::signature::Signature;
 use config::AppConfig;
 use database::Database;
+use database::ChainTarget;
 use errors::Result;
 use pinata_client::PinataClient;
+use evm_client::EvmClient;
 use solana_client::SolanaClient;
-use tokio::select;
-use tokio::signal::unix::{signal, SignalKind};
-use transaction_manager::TransactionManager;
+use transaction_manager::{ChainClient, TransactionManager};
 
 use chrono::Utc;
 use clap::{Arg, ArgMatches, Command};
@@ -70,26 +71,34 @@ async fn main() -> Result<()> {
         return handle_fetch_tx_data(sub_matches, config).await;
     }
 
-    log::info!("🚀 Starting Solana Sync Cron Job...");
+    log::info!(
+        "🚀 Starting Sync Cron Job (target_chain={})...",
+        config.target_chain
+    );
 
     // Initialize database
     let database = Database::new(&config.database_path).await?;
     database.migrate().await?;
     log::info!("💾 KV database initialized");
 
-    // Initialize user key pool
-    log::info!("🔄 Initializing user key pool...");
+    // Initialize user key pool (chain-aware)
+    let (chain, evm_bridge_script_path) = if config.target_chain.to_lowercase() == "base" {
+        (ChainTarget::Base, config.evm_config.as_ref().map(|c| c.bridge_script_path.as_str()))
+    } else {
+        (ChainTarget::Solana, None)
+    };
+
+    log::info!("🔄 Initializing user key pool for chain={:?}...", chain);
     database
-        .ensure_pool_size(
+        .ensure_pool_size_for_chain(
+            chain,
             config.user_key_pool_size,
             config.min_user_key_expiry_seconds,
             config.max_user_key_expiry_seconds,
+            evm_bridge_script_path,
         )
         .await?;
-    log::info!(
-        "🔑 User key pool initialized with {} keys",
-        config.user_key_pool_size
-    );
+    log::info!("🔑 User key pool initialized with {} keys", config.user_key_pool_size);
 
     let pinata_client = PinataClient::new(
         config.pinata_config.jwt_token.clone(),
@@ -98,27 +107,41 @@ async fn main() -> Result<()> {
     .expect("Pinata client must initialize");
     log::info!("📁 Pinata client initialized");
 
-    // Load agent keypairs from configuration
-    let agents = SolanaClient::load_agents_from_private_keys(&config.solana_config.agents);
-    log::info!("👥 Loaded {} agent keypairs", agents.len());
+    let chain_client = if config.target_chain.to_lowercase() == "base" {
+        let evm = config
+            .evm_config
+            .clone()
+            .ok_or_else(|| errors::SyncCronError::Config("evm_config required for TARGET_CHAIN=base".into()))?;
+        let bridge_path = evm.bridge_script_path.clone();
+        let evm_client = EvmClient::new(
+            evm,
+            config.clone(),
+            pinata_client,
+            database.clone(),
+            bridge_path,
+        );
+        log::info!("🌐 Base/EVM client initialized");
+        ChainClient::Base(evm_client)
+    } else {
+        // Load agent keypairs from configuration
+        let agents = SolanaClient::load_agents_from_private_keys(&config.solana_config.agents);
+        log::info!("👥 Loaded {} agent keypairs", agents.len());
 
-    // Initialize Solana client with loaded agents
-    let solana_client = SolanaClient::new(
-        &config.solana_rpc_url,
-        config.solana_config.clone(),
-        pinata_client,
-        agents,
-        database.clone(),
-        config.clone(),
-    );
-    log::info!("🌐 Solana client initialized");
+        // Initialize Solana client with loaded agents
+        let solana_client = SolanaClient::new(
+            &config.solana_rpc_url,
+            config.solana_config.clone(),
+            pinata_client,
+            agents,
+            database.clone(),
+            config.clone(),
+        );
+        log::info!("🌐 Solana client initialized");
+        ChainClient::Solana(solana_client)
+    };
 
     // Create transaction manager
-    let transaction_manager = Arc::new(TransactionManager::new(
-        database,
-        solana_client,
-        config.clone(),
-    ));
+    let transaction_manager = Arc::new(TransactionManager::new(database, chain_client, config.clone()));
     // Create job scheduler
     let mut scheduler = JobScheduler::new().await?;
 

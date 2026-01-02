@@ -7,11 +7,27 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::path::Path;
+use std::process::Stdio;
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 use uuid;
 
 #[derive(Debug, Clone)]
 pub struct Database {
     db: Db,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChainTarget {
+    #[serde(alias = "solana")]
+    Solana,
+    #[serde(alias = "base", alias = "evm")]
+    Base,
+}
+
+fn default_chain_target() -> ChainTarget {
+    ChainTarget::Solana
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +51,8 @@ pub struct UserKeyRecord {
     pub id: String,
     pub pubkey: String,
     pub private_key: String, // Base58 encoded
+    #[serde(default = "default_chain_target")]
+    pub chain: ChainTarget,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub last_used: Option<DateTime<Utc>>,
@@ -42,12 +60,18 @@ pub struct UserKeyRecord {
 }
 
 impl UserKeyRecord {
-    pub fn new(pubkey: String, private_key: String, expires_at: DateTime<Utc>) -> Self {
+    pub fn new(
+        pubkey: String,
+        private_key: String,
+        chain: ChainTarget,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             pubkey,
             private_key,
+            chain,
             created_at: now,
             expires_at,
             last_used: None,
@@ -288,16 +312,23 @@ impl Database {
         Ok(user_keys)
     }
 
-    pub async fn get_random_user_key(
+    pub async fn get_user_key_pool_for_chain(&self, chain: ChainTarget) -> Result<Vec<UserKeyRecord>> {
+        let keys = self.get_user_key_pool().await?;
+        Ok(keys.into_iter().filter(|k| k.chain == chain).collect())
+    }
+
+    pub async fn get_random_user_key_for_chain(
         &self,
+        chain: ChainTarget,
         min_expiry_seconds: u32,
         max_expiry_seconds: u32,
+        evm_bridge_script_path: Option<&str>,
     ) -> Result<UserKeyRecord> {
-        let user_keys = self.get_user_key_pool().await?;
+        let user_keys = self.get_user_key_pool_for_chain(chain).await?;
 
         if user_keys.is_empty() {
             return Err(SyncCronError::Config(
-                "No user keys available in pool".to_string(),
+                format!("No user keys available in pool for chain {:?}", chain),
             ));
         }
 
@@ -317,7 +348,12 @@ impl Database {
 
                 // Create a new key without removing the expired one (to preserve credits)
                 let new_key = self
-                    .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                    .create_new_user_key_for_chain(
+                        chain,
+                        min_expiry_seconds,
+                        max_expiry_seconds,
+                        evm_bridge_script_path,
+                    )
                     .await?;
                 self.add_user_key(new_key.clone()).await?;
 
@@ -333,7 +369,12 @@ impl Database {
 
                 // Create a new key to replace it
                 let new_key = self
-                    .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                    .create_new_user_key_for_chain(
+                        chain,
+                        min_expiry_seconds,
+                        max_expiry_seconds,
+                        evm_bridge_script_path,
+                    )
                     .await?;
                 self.add_user_key(new_key.clone()).await?;
 
@@ -355,13 +396,15 @@ impl Database {
         Ok(key_to_use)
     }
 
-    pub async fn ensure_pool_size(
+    pub async fn ensure_pool_size_for_chain(
         &self,
+        chain: ChainTarget,
         target_size: u32,
         min_expiry_seconds: u32,
         max_expiry_seconds: u32,
+        evm_bridge_script_path: Option<&str>,
     ) -> Result<()> {
-        let current_keys = self.get_user_key_pool().await?;
+        let current_keys = self.get_user_key_pool_for_chain(chain).await?;
         let current_size = current_keys.len();
 
         log::info!(
@@ -379,7 +422,12 @@ impl Database {
 
             for i in 0..keys_to_create {
                 let new_key = self
-                    .create_new_user_key(min_expiry_seconds, max_expiry_seconds)
+                    .create_new_user_key_for_chain(
+                        chain,
+                        min_expiry_seconds,
+                        max_expiry_seconds,
+                        evm_bridge_script_path,
+                    )
                     .await?;
                 self.add_user_key(new_key).await?;
                 log::info!("✅ Created user key {}/{}", i + 1, keys_to_create);
@@ -489,35 +537,81 @@ impl Database {
         Ok(deleted_count)
     }
 
-    pub async fn get_or_create_user_key(
+    pub async fn get_or_create_user_key_for_chain(
         &self,
+        chain: ChainTarget,
         pool_size: u32,
         min_expiry_seconds: u32,
         max_expiry_seconds: u32,
+        evm_bridge_script_path: Option<&str>,
     ) -> Result<UserKeyRecord> {
         // Ensure the pool is at the target size first
-        self.ensure_pool_size(pool_size, min_expiry_seconds, max_expiry_seconds)
+        self.ensure_pool_size_for_chain(
+            chain,
+            pool_size,
+            min_expiry_seconds,
+            max_expiry_seconds,
+            evm_bridge_script_path,
+        )
             .await?;
 
         // Get a random key from the pool (this handles expiry replacement automatically)
-        self.get_random_user_key(min_expiry_seconds, max_expiry_seconds)
+        self.get_random_user_key_for_chain(chain, min_expiry_seconds, max_expiry_seconds, evm_bridge_script_path)
             .await
     }
 
-    async fn create_new_user_key(
+    async fn run_bridge_for_wallet(
         &self,
+        evm_bridge_script_path: &str,
+        command: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let mut child = Command::new("node")
+            .arg(evm_bridge_script_path)
+            .arg(command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| SyncCronError::Network(format!("Failed to spawn node for wallet gen: {}", e)))?;
+
+        {
+            let stdin = child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| SyncCronError::Network("Failed to open stdin for node".into()))?;
+            let payload = serde_json::to_vec(&input)?;
+            stdin
+                .write_all(&payload)
+                .await
+                .map_err(|e| SyncCronError::Network(format!("Failed to write to node stdin: {}", e)))?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| SyncCronError::Network(format!("Failed to wait for node: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            return Err(SyncCronError::Network(format!(
+                "evm_bridge failed (cmd={}): {}",
+                command, stderr
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        serde_json::from_str(stdout.trim())
+            .map_err(|e| SyncCronError::Network(format!("Invalid JSON from evm_bridge: {}", e)))
+    }
+
+    async fn create_new_user_key_for_chain(
+        &self,
+        chain: ChainTarget,
         min_expiry_seconds: u32,
         max_expiry_seconds: u32,
+        evm_bridge_script_path: Option<&str>,
     ) -> Result<UserKeyRecord> {
-        use anchor_client::solana_sdk::signature::{Keypair, Signer};
-
-        // Generate a new keypair
-        let keypair = Keypair::new();
-        let pubkey = keypair.pubkey().to_string();
-
-        // Encode the private key as base58
-        let private_key = bs58::encode(keypair.to_bytes()).into_string();
-
         // Generate random expiry time
         let expiry_seconds = if min_expiry_seconds == max_expiry_seconds {
             min_expiry_seconds
@@ -527,7 +621,34 @@ impl Database {
 
         let expires_at = Utc::now() + chrono::Duration::seconds(expiry_seconds as i64);
 
-        let user_key = UserKeyRecord::new(pubkey, private_key, expires_at);
+        let (pubkey, private_key) = match chain {
+            ChainTarget::Solana => {
+                use anchor_client::solana_sdk::signature::{Keypair, Signer};
+                let keypair = Keypair::new();
+                let pubkey = keypair.pubkey().to_string();
+                let private_key = bs58::encode(keypair.to_bytes()).into_string();
+                (pubkey, private_key)
+            }
+            ChainTarget::Base => {
+                let script = evm_bridge_script_path.ok_or_else(|| {
+                    SyncCronError::Config(
+                        "EVM bridge script path required to create Base user keys".into(),
+                    )
+                })?;
+                let v = self
+                    .run_bridge_for_wallet(script, "create_random_wallet", serde_json::json!({}))
+                    .await?;
+                let address = v["address"].as_str().ok_or_else(|| {
+                    SyncCronError::Network("Missing address from create_random_wallet".into())
+                })?;
+                let pk = v["privateKey"].as_str().ok_or_else(|| {
+                    SyncCronError::Network("Missing privateKey from create_random_wallet".into())
+                })?;
+                (address.to_string(), pk.to_string())
+            }
+        };
+
+        let user_key = UserKeyRecord::new(pubkey, private_key, chain, expires_at);
 
         log::info!(
             "🔑 Created new user key: {} (expires in {} seconds)",
@@ -609,8 +730,16 @@ impl Database {
     }
 
     /// Get a random user with accumulated credits > 0
-    pub async fn get_random_user_with_credits(&self) -> Result<Option<UserKeyRecord>> {
-        let users_with_credits = self.get_users_with_accumulated_credits().await?;
+    pub async fn get_random_user_with_credits_for_chain(
+        &self,
+        chain: ChainTarget,
+    ) -> Result<Option<UserKeyRecord>> {
+        let users_with_credits = self
+            .get_users_with_accumulated_credits()
+            .await?
+            .into_iter()
+            .filter(|u| u.chain == chain)
+            .collect::<Vec<_>>();
 
         if users_with_credits.is_empty() {
             return Ok(None);

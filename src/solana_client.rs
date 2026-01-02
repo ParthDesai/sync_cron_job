@@ -1,4 +1,3 @@
-use std::path::Path;
 use crate::config::{AppConfig, SolanaConfig};
 use crate::database::Database;
 use crate::errors::{Result, SyncCronError};
@@ -14,6 +13,7 @@ use anchor_client::solana_sdk::{keccak, system_instruction};
 use anchor_client::{Client, Cluster};
 use anchor_spl::associated_token::spl_associated_token_account;
 use anchor_spl::token_2022::spl_token_2022;
+use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shellexpand;
@@ -67,7 +67,11 @@ impl SolanaClient {
         }
     }
 
-    fn generate_synthetic_file_name_and_data(&self, seed_file_name: String) -> Result<(String, Vec<u8>)> {
+    pub(crate) fn generate_synthetic_file_name_and_data_static(
+        seed_file_name: &str,
+        min_file_size_bytes: u32,
+        max_file_size_bytes: u32,
+    ) -> Result<(String, Vec<u8>)> {
         let synthetic_file_name = seed_file_name.rsplit_once(".").and_then(|(file_name, extension)| {
             Some(format!("{}_synth.{}", file_name, extension))
         }).ok_or(SyncCronError::Anyhow(anyhow::Error::msg("unable to parse seed file name")))?;
@@ -75,7 +79,7 @@ impl SolanaClient {
         // Generate random file size between min and max
         let mut rng = rand::thread_rng();
         let file_size = rng
-            .gen_range(self.app_config.min_file_size_bytes..=self.app_config.max_file_size_bytes)
+            .gen_range(min_file_size_bytes..=max_file_size_bytes)
             as usize;
 
         let mut data = vec![0; file_size];
@@ -87,26 +91,28 @@ impl SolanaClient {
         Ok((synthetic_file_name, data))
     }
 
-    fn generate_random_file_name_and_data(
-        &self,
-        primary_category: &str,
-        secondary_category: &str,
+    pub(crate) fn generate_random_file_name_and_data_static(
+        category: &str,
+        data_type: &str,
+        format: &str,
         file_extension: &str,
+        min_file_size_bytes: u32,
+        max_file_size_bytes: u32,
     ) -> Result<(String, Vec<u8>)> {
-        // Generate filename from categories, handling empty secondary category
-        let file_name = if secondary_category.is_empty() {
-            format!("{}.{}", primary_category, file_extension)
-        } else {
-            format!(
-                "{}_{}.{}",
-                primary_category, secondary_category, file_extension
-            )
-        };
+        let random_id: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(5)
+            .map(char::from)
+            .collect();
+        let file_name = format!(
+            "{}_{}_{}_{}.{}",
+            category, data_type, format, random_id, file_extension
+        );
 
         // Generate random file size between min and max
         let mut rng = rand::thread_rng();
         let file_size = rng
-            .gen_range(self.app_config.min_file_size_bytes..=self.app_config.max_file_size_bytes)
+            .gen_range(min_file_size_bytes..=max_file_size_bytes)
             as usize;
 
         let mut data = vec![0; file_size];
@@ -116,6 +122,46 @@ impl SolanaClient {
         log::info!("📄 Generated file: {} ({} bytes)", file_name, file_size);
 
         Ok((file_name, data))
+    }
+
+    pub(crate) fn generate_random_rating_static(high_rating_percentage: f64) -> (u8, bool) {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        let random_percentage: f64 = rng.gen();
+        if random_percentage < high_rating_percentage {
+            (rng.gen_range(60..=100), true)
+        } else {
+            (rng.gen_range(0..=59), false)
+        }
+    }
+
+    fn generate_synthetic_file_name_and_data(
+        &self,
+        seed_file_name: String,
+    ) -> Result<(String, Vec<u8>)> {
+        Self::generate_synthetic_file_name_and_data_static(
+            &seed_file_name,
+            self.app_config.min_file_size_bytes,
+            self.app_config.max_file_size_bytes,
+        )
+    }
+
+    fn generate_random_file_name_and_data(
+        &self,
+        category: &str,
+        data_type: &str,
+        format: &str,
+        file_extension: &str,
+    ) -> Result<(String, Vec<u8>)> {
+        Self::generate_random_file_name_and_data_static(
+            category,
+            data_type,
+            format,
+            file_extension,
+            self.app_config.min_file_size_bytes,
+            self.app_config.max_file_size_bytes,
+        )
     }
 
     async fn transfer_funds(&self, from: &Keypair, to: &Pubkey, amount: u64) -> Result<()> {
@@ -242,19 +288,20 @@ impl SolanaClient {
         let program_id = Pubkey::from_str(&self.config.program_id).unwrap();
         let program = client.program(program_id).unwrap();
 
-        // Get random categories and file extension for the transaction first
-        let (primary_category, secondary_category, file_extension) =
-            self.app_config.get_random_categories()?;
+        // Pick a file profile (category, datatype, format, extension)
+        let (category, data_type, format, file_extension) = self.app_config.select_file_profile()?;
         log::info!(
-            "🎯 Selected categories - Primary: '{}', Secondary: '{}', Extension: '{}'",
-            primary_category,
-            secondary_category,
+            "🎯 Selected file profile - Category: '{}', DataType: '{}', Format: '{}', Extension: '{}'",
+            category,
+            data_type,
+            format,
             file_extension
         );
 
         let (file_name, data) = self.generate_random_file_name_and_data(
-            &primary_category,
-            &secondary_category,
+            &category,
+            &data_type,
+            &format,
             &file_extension,
         )?;
         let upload_result = self
@@ -275,10 +322,12 @@ impl SolanaClient {
         // Get user keypair from pool instead of creating new one
         let user_key_record = self
             .database
-            .get_or_create_user_key(
+            .get_or_create_user_key_for_chain(
+                crate::database::ChainTarget::Solana,
                 self.app_config.user_key_pool_size,
                 self.app_config.min_user_key_expiry_seconds,
                 self.app_config.max_user_key_expiry_seconds,
+                None,
             )
             .await?;
 
@@ -309,8 +358,8 @@ impl SolanaClient {
             })
             .args(sync_contract::instruction::SubmitData {
                 data_link: upload_result.cid.clone(),
-                primary_category,
-                secondary_category,
+                primary_category: category,
+                secondary_category: data_type,
             })
             .payer(&user)
             .send()
@@ -509,19 +558,7 @@ impl SolanaClient {
 
     // Generate a random rating based on the configured percentage
     fn generate_random_rating(&self) -> (u8, bool) {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-
-        // Decide whether to give a high rating (>=60) or low rating (<60)
-        let random_percentage: f64 = rng.gen();
-
-        if random_percentage < self.app_config.high_rating_percentage {
-            // Give a high rating (60-100)
-            (rng.gen_range(60..=100), true)
-        } else {
-            // Give a low rating (0-59)
-            (rng.gen_range(0..=59), false)
-        }
+        Self::generate_random_rating_static(self.app_config.high_rating_percentage)
     }
 
     /// Claim accumulated credits for a user

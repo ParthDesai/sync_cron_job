@@ -27,6 +27,12 @@ Thumbs.db
 # Solana keypairs (be careful with these)
 *.json
 !config.example.json
+!config.base.example.json
+!package.json
+!package-lock.json
+
+# Node
+node_modules/
 
 # Backup files
 *.bak

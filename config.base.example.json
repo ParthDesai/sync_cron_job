@@ -1,0 +1,77 @@
+{
+  "target_chain": "base",
+  "evm_config": {
+    "rpc_url": "https://sepolia.base.org",
+    "sync_contract_proxy": "0xE92793FcAd1d8B616CC0F603046B699e697880DD",
+    "domain": "syncora.ai",
+    "admin_private_key": null,
+    "agents": [
+      "0xYOUR_AGENT_PRIVATE_KEY_1",
+      "0xYOUR_AGENT_PRIVATE_KEY_2"
+    ],
+    "min_user_balance_wei": 10000000000000000,
+    "min_agent_balance_wei": 10000000000000000,
+    "funding_amount_wei": 50000000000000000,
+    "bridge_script_path": "scripts/evm_bridge.js"
+  },
+  "database_path": "./kv_store",
+  "min_daily_transactions": 800,
+  "max_daily_transactions": 1200,
+  "min_user_key_expiry_seconds": 1200,
+  "max_user_key_expiry_seconds": 3600,
+  "min_file_size_bytes": 512,
+  "max_file_size_bytes": 4096,
+  "user_key_pool_size": 2,
+  "high_rating_percentage": 1,
+  "cron_schedule_in_minutes": 1,
+  "solana_rpc_url": "https://api.devnet.solana.com",
+  "solana_config": {
+    "keypair_file": "~/.config/solana/id.json",
+    "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
+    "token_mint_address": "6RNubhPChLts6fKh7nhac3ocDF4G1usv3dGw9akHXTEg",
+    "commitment": "confirmed",
+    "agents": [],
+    "categories_supported": {
+      "technology": {
+        "probability": 0.7,
+        "data_types": [
+          {
+            "name": "patientdata",
+            "probability": 0.6,
+            "formats": [
+              { "format": "hl7", "extension": "hl7" },
+              { "format": "json", "extension": "json" }
+            ]
+          },
+          {
+            "name": "device",
+            "probability": 0.4,
+            "formats": [
+              { "format": "csv", "extension": "csv" },
+              { "format": "json", "extension": "json" }
+            ]
+          }
+        ]
+      },
+      "science": {
+        "probability": 0.3,
+        "data_types": [
+          {
+            "name": "research",
+            "probability": 1.0,
+            "formats": [
+              { "format": "csv", "extension": "csv" },
+              { "format": "json", "extension": "json" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "pinata_config": {
+    "jwt_token": "REPLACE_ME",
+    "gateway_url": "https://REPLACE_ME"
+  }
+}
+
+

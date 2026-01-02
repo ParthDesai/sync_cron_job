@@ -1,21 +1,51 @@
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::errors::Result;
+use crate::database::{ChainTarget, UserKeyRecord};
+use crate::evm_client::EvmClient;
 use crate::solana_client::{SolanaClient, TransactionResult};
 use chrono::{Timelike, Utc};
 use rand::Rng;
 
+pub enum ChainClient {
+    Solana(SolanaClient),
+    Base(EvmClient),
+}
+
+impl ChainClient {
+    pub async fn submit_transaction(&self, config: &AppConfig) -> Result<TransactionResult> {
+        match self {
+            ChainClient::Solana(c) => c.submit_transaction(&config.solana_config).await,
+            ChainClient::Base(c) => c.submit_transaction().await,
+        }
+    }
+
+    pub async fn claim_credits(&self, user_key_record: &UserKeyRecord) -> Result<(String, u128)> {
+        match self {
+            ChainClient::Solana(c) => c.claim_credits(user_key_record).await,
+            ChainClient::Base(c) => c.claim_credits(user_key_record).await,
+        }
+    }
+
+    pub fn chain_target(&self) -> ChainTarget {
+        match self {
+            ChainClient::Solana(_) => ChainTarget::Solana,
+            ChainClient::Base(_) => ChainTarget::Base,
+        }
+    }
+}
+
 pub struct TransactionManager {
     database: Database,
-    solana_client: SolanaClient,
+    client: ChainClient,
     config: AppConfig,
 }
 
 impl TransactionManager {
-    pub fn new(database: Database, solana_client: SolanaClient, config: AppConfig) -> Self {
+    pub fn new(database: Database, client: ChainClient, config: AppConfig) -> Self {
         Self {
             database,
-            solana_client,
+            client,
             config,
         }
     }
@@ -100,7 +130,11 @@ impl TransactionManager {
             log::info!("⏭️ Skipping transaction this cycle (random selection)");
 
             // Instead of skipping entirely, try to claim credits for a user with accumulated credits
-            match self.database.get_random_user_with_credits().await {
+            match self
+                .database
+                .get_random_user_with_credits_for_chain(self.client.chain_target())
+                .await
+            {
                 Ok(Some(user_with_credits)) => {
                     log::info!(
                         "💳 Attempting to claim credits for user {} with {} accumulated credits",
@@ -108,7 +142,7 @@ impl TransactionManager {
                         user_with_credits.accumulated_credits
                     );
 
-                    match self.solana_client.claim_credits(&user_with_credits).await {
+                    match self.client.claim_credits(&user_with_credits).await {
                         Ok((signature, new_accumulated_credits)) => {
                             log::info!(
                                 "✅ Successfully claimed credits for user {}, tx hash: {}",
@@ -325,10 +359,7 @@ impl TransactionManager {
     }
 
     async fn send_single_transaction(&self) -> Result<TransactionResult> {
-        let result = self
-            .solana_client
-            .submit_transaction(&self.config.solana_config)
-            .await?;
+        let result = self.client.submit_transaction(&self.config).await?;
         Ok(result)
     }
 

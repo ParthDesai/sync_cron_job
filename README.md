@@ -1,6 +1,10 @@
-# Sync Cron - Solana Smart Contract Interaction Bot
+# Sync Cron - Blockchain Interaction Cron (Solana + Base/EVM)
 
-A Rust-based cron job application that interacts with Solana smart contracts on a scheduled basis while maintaining transaction limits and state tracking with randomized distribution throughout the day.
+A Rust-based cron job that interacts with the **SyncContract** on a schedule while maintaining transaction limits and state tracking with randomized distribution throughout the day.
+
+This repo supports:
+- **Base / EVM mode** (recommended): calls the EVM `SyncContract` via a lightweight Node bridge (`scripts/evm_bridge.js`)
+- **Solana mode** (legacy): interacts with the original Solana Anchor program
 
 ## Features
 
@@ -14,19 +18,21 @@ A Rust-based cron job application that interacts with Solana smart contracts on 
 - **Priority Credit Processing**: Prioritizes expired users for credit claiming to optimize database cleanup
 - **Local KV Storage**: Uses Sled embedded database for fast, reliable local storage
 - **State Management**: Tracks transaction history and status without external dependencies
-- **Solana Integration**: Full Solana blockchain integration with transaction confirmation tracking
+- **Solana Integration (legacy)**: Full Solana blockchain integration with transaction confirmation tracking
+- **Base/EVM Integration**: Works with Base via a minimal Node bridge using `ethers`
 - **IPFS Integration**: Built-in Pinata IPFS support for data storage
 - **Flexible Configuration**: JSON-based configuration with environment variable support
 - **Enhanced Logging**: Comprehensive logging with Unicode symbols for better readability and monitoring
 - **Transaction Status Tracking**: Real-time monitoring of transaction confirmations
 - **Balance Monitoring**: Automatic balance checking and warnings for master keypairs
-- **Category Management**: Dynamic category selection with size validation
+- **Category/DataType Management**: Weighted category + weighted datatype selection, with (format, extension) pairs
 - **Automatic Funding**: Smart funding of user and agent accounts when balances are low
 
 ## Prerequisites
 
-- Rust 1.70+ 
-- Solana CLI tools (for keypair management)
+- **Rust** 1.70+
+- **Node.js** 18+ and **npm** (required for Base/EVM mode)
+- Optional (Solana mode): Solana CLI tools (for keypair management)
 
 ## Installation
 
@@ -36,16 +42,79 @@ git clone <repository-url>
 cd sync_cron
 ```
 
-2. Build the project:
+2. Install Node deps (required for Base/EVM mode):
+
+```bash
+npm install
+```
+
+3. Build the project:
 ```bash
 cargo build --release
 ```
 
-3. Set up your configuration:
+4. Set up your configuration:
 ```bash
 cp config.example.json config.json
 # Edit config.json with your settings specifically agent keys and pinata configuration
 ```
+
+## Base / EVM mode (recommended)
+
+### 1) Deploy / get the proxy address
+You need the **SyncContract proxy** address (ERC1967 proxy) on Base Sepolia / Base Mainnet.
+
+Example (Base Sepolia):
+- Proxy address: `0xE92793FcAd1d8B616CC0F603046B699e697880DD`
+
+### 2) Configure Base mode
+
+You can configure via:
+- **JSON**: use `config.base.example.json` as a template
+- **Env vars**: see below
+
+Minimum required values:
+- **RPC URL** (Base Sepolia example): `https://sepolia.base.org`
+- **Proxy address**: `EVM_SYNC_CONTRACT_PROXY`
+- **Agents**: `EVM_AGENTS` (comma-separated `0x...` private keys)
+- **Pinata**: `PINATA_JWT_TOKEN` and `PINATA_GATEWAY_URL`
+
+Strongly recommended:
+- **Admin private key** (`EVM_ADMIN_PRIVATE_KEY`) so the cron can:
+  - fund user/agent wallets with ETH when balances are low
+  - call `allowAgent(...)` when an agent is not enabled
+
+### 3) Required env vars (Base Sepolia example)
+
+```bash
+export TARGET_CHAIN=base
+export EVM_RPC_URL="https://sepolia.base.org"
+export EVM_SYNC_CONTRACT_PROXY="0xE92793FcAd1d8B616CC0F603046B699e697880DD"
+export EVM_DOMAIN="syncora.ai"                      # optional (default: syncora.ai)
+export EVM_AGENTS="0xAGENT_PK_1,0xAGENT_PK_2"
+export EVM_ADMIN_PRIVATE_KEY="0xADMIN_PK"           # recommended
+
+export PINATA_JWT_TOKEN="..."
+export PINATA_GATEWAY_URL="https://..."
+```
+
+Run:
+
+```bash
+cargo run
+```
+
+### 4) What the cron sends on-chain (Base submitData)
+When running in Base mode, the cron calls `submitData(...)` with:
+- `dataLink`: the uploaded Pinata CID
+- `primaryCategory`: selected category
+- `secondaryCategory`: selected datatype
+- `domain`: from config (`evm_config.domain` / `EVM_DOMAIN`)
+- `dataType`: selected datatype
+- `dataFormat`: selected format
+- `fileSizeInKB`: computed from the uploaded bytes (rounded up, \( \lceil bytes/1024 \rceil \))
+
+The contract sets `timestamp` internally from `block.timestamp`.
 
 ## How Random Scheduling Works
 
@@ -218,50 +287,73 @@ export PINATA_GATEWAY_URL="https://gateway.pinata.cloud"
 - **commitment**: Transaction commitment level (confirmed, finalized)
 - **token_mint_address**: Token mint address for credit claiming operations
 - **agents**: Array of Base58-encoded private keys for agent wallets
-- **categories_supported**: Mapping of primary categories to their secondary categories (nested under solana_config)
+- **categories_supported**: Weighted category selection with weighted datatypes and (format, extension) pairs (nested under solana_config)
 - **pinata_config**: IPFS configuration for Pinata service (JWT token and gateway URL)
 
 ## Categories Configuration
 
-The application supports dynamic category selection for data submissions. Categories are randomly selected from the configured `categories_supported` mapping within the `solana_config` section:
+The application supports **weighted** category selection for data submissions. Categories are selected from the configured `categories_supported` mapping within the `solana_config` section.
 
 ### Category Structure
+
+New schema (recommended):
+
 ```json
 {
   "solana_config": {
     "categories_supported": {
-      "primary_category1": [
-        "secondary_category1",
-        "secondary_category2",
-        "secondary_category3"
-      ],
-      "primary_category2": [
-        "secondary_category21",
-        "secondary_category22"
-      ]
+      "technology": {
+        "probability": 0.7,
+        "data_types": [
+          {
+            "name": "patientdata",
+            "probability": 0.6,
+            "formats": [
+              { "format": "hl7", "extension": "hl7" },
+              { "format": "json", "extension": "json" }
+            ]
+          }
+        ]
+      },
+      "science": {
+        "probability": 0.3,
+        "data_types": [
+          {
+            "name": "research",
+            "probability": 1.0,
+            "formats": [
+              { "format": "csv", "extension": "csv" }
+            ]
+          }
+        ]
+      }
     }
   }
 }
 ```
 
 ### Category Selection Process
-1. **Random Primary Selection**: A primary category is randomly selected from the available keys
-2. **Random Secondary Selection**: A secondary category is randomly selected from the chosen primary category's array
-3. **Validation**: All category strings are validated against the size limits defined in the `sync_contract` crate
-4. **Logging**: Selected categories are logged for each transaction
+1. **Weighted Category Selection**: category is selected using `category.probability`
+2. **Weighted DataType Selection**: datatype is selected using `datatype.probability` within the selected category
+3. **Random (format, extension)**: one `(format, extension)` pair is selected uniformly from the datatype’s list
+4. **Validation**: category and datatype strings are validated against the on-chain size limits
+5. **Logging**: selected profile is logged for each transaction
 
 ### Size Validation
 - **Primary Category Size**: Must not exceed `PRIMARY_CATEGORY_SIZE` bytes (defined in sync_contract)
-- **Secondary Category Size**: Must not exceed `SECONDARY_CATEGORY_SIZE` bytes (defined in sync_contract)
+- **DataType Size**: Must not exceed `SECONDARY_CATEGORY_SIZE` bytes (defined in sync_contract)
 - **Validation Timing**: Categories are validated at application startup and configuration load
 
-### Example Categories
-The example configuration includes categories for:
-- **Technology**: ai, blockchain, software, hardware, mobile
-- **Science**: physics, chemistry, biology, mathematics, research
-- **Business**: finance, marketing, strategy, management, consulting
-- **Education**: teaching, learning, curriculum, assessment, training
-- **Health**: medicine, wellness, nutrition, fitness, mental
+### Filename format (important)
+The uploaded filename format is:
+
+`{category}_{datatype}_{format}_{random_id}.{extension}`
+
+- `random_id` is 5-character alphanumeric
+- `category/datatype/format/extension` come from the selection process above
+
+### Legacy schema (still supported)
+Older configs that use `secondary_categories` + `file_extensions` still work. If `data_types` is omitted/empty, the cron falls back to legacy selection.
 
 ## Balance Monitoring
 
@@ -678,3 +770,16 @@ To modify the randomization behavior:
 - Adjust time-based multipliers in `get_time_based_multiplier()`
 - Modify probability caps in `calculate_transaction_probability()`
 - Change daily target ranges with `min_daily_transactions` and `max_daily_transactions`
+
+
+### Tx hash
+1. iwFc823rdnUDqtefEdyFiSCaD1tvmphXESJooUnN6YT5nQgGwDn7byPZRnYKyGQxoBpBqXrGL4GNg7KpGEmY1qv
+2. 65KXUyTjYWXg5QtbSacK4ZTj4JcoR1To1ZYB9cHrZNFAozXvsuY1D4sW34E3rnna46LKhWsRvTEVQrxZjQkYArAe
+3. 4w8VJcsuyzPkXx8RmajWcEHLHvxr3feH5jbbA1vz6ZAz95bjtcbrT8PgpCTvr2xkPmahur8MZDDizDygmNeWoe38
+4. zTNT8Fu3FzBHrAfVkSSu4qoJmq6QSN1XzXsG9c3TKC9tQPExG68XbBA6kWGmSjTkpDwAqeRPYHW7qVGnrG7LNMS
+5. 7C6SzDWSnTB9RjLn8mNADXFJh8BzWUqHKQibtoiMbjLCQjZLGpBKVZUeYaBe1KUUk3V42eB9fq3yoFPSeETeRwZ
+6. 62QbVBsqJfdzGPLaHstQiEznE47AnovdfNuEdxHnmc92uAYkA65uUPmJb5jvXMwp7TwfyGvPjdY7wqBrgZGS8eUm
+7. 4a3j5GqNTnY6RTgHcxpew5a669XTDQjsK1eoPtkbuCHkogwfHutLK3WP22FgwuB8dXZvRpSsEZ4WXouvAVjUgTps
+8. 4tPJGtxAqWhE4Gte9Yy2vSuDoPjg2NsAD9Fwi77Gmy3yH4ojuBmAiwniEKV7NKHFK8my94pTLwPTuKbqRByXWtNk
+9. W7PDnDC9xtbgNenToph2S6kbSwb8x4pWmPTv828VpvrdtscD9WZrRAQzC94NTYXFiHgGfH5yqXYk8YHfBYboKwG
+10. rGxDfRyk5jXPCSWWKxbNopCFmEu7PoVC7jhyqEwHZxQKPcqqtmm6NGyUzfL67xSUtQCQmLPmeQFsKyyHwVnUzgk

@@ -7,7 +7,13 @@ use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// Which chain to use for cron operations. Supported: "solana", "base"
+    #[serde(default = "default_target_chain")]
+    pub target_chain: String,
     pub solana_rpc_url: String,
+    /// Base/EVM configuration (required when target_chain == "base")
+    #[serde(default)]
+    pub evm_config: Option<EvmConfig>,
     pub database_path: String,
     pub min_daily_transactions: u32,
     pub max_daily_transactions: u32,
@@ -22,6 +28,51 @@ pub struct AppConfig {
     pub pinata_config: PinataConfig,
 }
 
+fn default_target_chain() -> String {
+    "solana".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvmConfig {
+    pub rpc_url: String,
+    pub sync_contract_proxy: String,
+    /// Domain stored on-chain for each submission (e.g. "syncora.ai")
+    #[serde(default = "default_evm_domain")]
+    pub domain: String,
+    /// Optional admin key used to fund wallets and allow agents.
+    #[serde(default)]
+    pub admin_private_key: Option<String>,
+    /// Comma-separated list in env; stored as Vec in config.
+    #[serde(default)]
+    pub agents: Vec<String>,
+    #[serde(default = "default_min_user_balance_wei")]
+    pub min_user_balance_wei: u128,
+    #[serde(default = "default_min_agent_balance_wei")]
+    pub min_agent_balance_wei: u128,
+    #[serde(default = "default_funding_amount_wei")]
+    pub funding_amount_wei: u128,
+    /// Path to Node bridge script (`scripts/evm_bridge.js`)
+    #[serde(default = "default_evm_bridge_script_path")]
+    pub bridge_script_path: String,
+}
+
+fn default_min_user_balance_wei() -> u128 {
+    10_000_000_000_000_000u128 // 0.01 ETH
+}
+fn default_min_agent_balance_wei() -> u128 {
+    10_000_000_000_000_000u128 // 0.01 ETH
+}
+fn default_funding_amount_wei() -> u128 {
+    50_000_000_000_000_000u128 // 0.05 ETH
+}
+fn default_evm_bridge_script_path() -> String {
+    "scripts/evm_bridge.js".to_string()
+}
+
+fn default_evm_domain() -> String {
+    "syncora.ai".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PinataConfig {
     pub jwt_token: String,
@@ -30,8 +81,42 @@ pub struct PinataConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryConfig {
+    /// Relative weight for this category. Larger means more likely.
+    /// If omitted (legacy configs), defaults to 1.0.
+    #[serde(default = "default_probability")]
+    pub probability: f64,
+
+    /// New schema: pick a data type within the category using probability.
+    /// If empty, we fall back to legacy behavior (secondary_categories + file_extensions).
+    #[serde(default)]
+    pub data_types: Vec<DataTypeConfig>,
+
+    /// Legacy schema (kept for backward compatibility).
+    #[serde(default)]
     pub secondary_categories: Vec<String>,
+
+    /// Legacy schema (kept for backward compatibility).
+    #[serde(default)]
     pub file_extensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataTypeConfig {
+    pub name: String,
+    #[serde(default = "default_probability")]
+    pub probability: f64,
+    /// Each data type supports multiple (format, extension) pairs. Pick one uniformly.
+    pub formats: Vec<FormatExtension>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatExtension {
+    pub format: String,
+    pub extension: String,
+}
+
+fn default_probability() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +152,12 @@ impl AppConfig {
         Ok(config)
     }
 
+    /// Backward-compatible alias (older code/tests may call this).
+    pub fn get_random_categories(&self) -> Result<(String, String, String)> {
+        let (cat, dt, _fmt, ext) = self.select_file_profile()?;
+        Ok((cat, dt, ext))
+    }
+
     /// Validate that all categories fit within the size constraints defined in sync_contract
     fn validate_categories(&self) -> Result<()> {
         // Get the size limits from sync_contract constants
@@ -90,14 +181,62 @@ impl AppConfig {
                 )));
             }
 
-            // Check each secondary category size
-            for secondary_category in &category_config.secondary_categories {
-                if secondary_category.as_bytes().len() > secondary_category_size {
+            if !category_config.probability.is_finite() || category_config.probability < 0.0 {
+                return Err(SyncCronError::Config(format!(
+                    "Category '{}' has invalid probability: {}",
+                    primary_category, category_config.probability
+                )));
+            }
+
+            // New schema validation (if present)
+            if !category_config.data_types.is_empty() {
+                for dt in &category_config.data_types {
+                    if dt.name.as_bytes().len() > secondary_category_size {
+                        return Err(SyncCronError::Config(format!(
+                            "Data type '{}' (category '{}') exceeds max size {} bytes (actual: {} bytes)",
+                            dt.name,
+                            primary_category,
+                            secondary_category_size,
+                            dt.name.as_bytes().len()
+                        )));
+                    }
+                    if !dt.probability.is_finite() || dt.probability < 0.0 {
+                        return Err(SyncCronError::Config(format!(
+                            "Data type '{}' (category '{}') has invalid probability: {}",
+                            dt.name, primary_category, dt.probability
+                        )));
+                    }
+                    if dt.formats.is_empty() {
+                        return Err(SyncCronError::Config(format!(
+                            "Data type '{}' (category '{}') must have at least one (format, extension) pair",
+                            dt.name, primary_category
+                        )));
+                    }
+                    for fe in &dt.formats {
+                        if fe.format.trim().is_empty() || fe.extension.trim().is_empty() {
+                            return Err(SyncCronError::Config(format!(
+                                "Data type '{}' (category '{}') contains empty format/extension",
+                                dt.name, primary_category
+                            )));
+                        }
+                    }
+                }
+            } else {
+                // Legacy schema validation
+                for secondary_category in &category_config.secondary_categories {
+                    if secondary_category.as_bytes().len() > secondary_category_size {
+                        return Err(SyncCronError::Config(format!(
+                            "Secondary category '{}' exceeds maximum size of {} bytes (actual: {} bytes)",
+                            secondary_category,
+                            secondary_category_size,
+                            secondary_category.as_bytes().len()
+                        )));
+                    }
+                }
+                if category_config.file_extensions.is_empty() {
                     return Err(SyncCronError::Config(format!(
-                        "Secondary category '{}' exceeds maximum size of {} bytes (actual: {} bytes)",
-                        secondary_category,
-                        secondary_category_size,
-                        secondary_category.as_bytes().len()
+                        "No file extensions found for primary category '{}' (legacy config)",
+                        primary_category
                     )));
                 }
             }
@@ -106,8 +245,15 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Get a random primary category, one of its secondary categories, and a random file extension
-    pub fn get_random_categories(&self) -> Result<(String, String, String)> {
+    /// Select (category, datatype, format, extension) using probabilities.
+    /// - Category chosen by `category.probability`
+    /// - Data type chosen by `datatype.probability` inside the selected category
+    /// - (format, extension) chosen uniformly from the selected data type
+    ///
+    /// Backward compatible:
+    /// - If `data_types` is empty, we pick a legacy `secondary_category` (or empty) and a legacy extension.
+    /// - Legacy selection is uniform (no probabilities).
+    pub fn select_file_profile(&self) -> Result<(String, String, String, String)> {
         if self.solana_config.categories_supported.is_empty() {
             return Err(SyncCronError::Config(
                 "No categories configured in categories_supported".to_string(),
@@ -117,19 +263,66 @@ impl AppConfig {
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
-        // Get all primary categories
-        let primary_categories: Vec<&String> =
-            self.solana_config.categories_supported.keys().collect();
+        // Weighted pick category
+        let mut categories: Vec<(&String, &CategoryConfig)> =
+            self.solana_config.categories_supported.iter().collect();
+        categories.sort_by(|a, b| a.0.cmp(b.0)); // deterministic iteration for logs/tests
 
-        // Select a random primary category
-        let primary_category = primary_categories[rng.gen_range(0..primary_categories.len())];
+        let total_weight: f64 = categories.iter().map(|(_, c)| c.probability.max(0.0)).sum();
+        if total_weight <= 0.0 {
+            return Err(SyncCronError::Config(
+                "All category probabilities are 0; cannot select category".to_string(),
+            ));
+        }
 
-        // Get category config for the selected primary category
-        let category_config = self
-            .solana_config
-            .categories_supported
-            .get(primary_category)
-            .unwrap();
+        let mut roll = rng.gen::<f64>() * total_weight;
+        let mut picked = categories[0];
+        for item in categories {
+            let w = item.1.probability.max(0.0);
+            if roll <= w {
+                picked = item;
+                break;
+            }
+            roll -= w;
+        }
+        let (category_name, category_config) = picked;
+
+        // New schema path
+        if !category_config.data_types.is_empty() {
+            let dts = &category_config.data_types;
+            let dt_total: f64 = dts.iter().map(|d| d.probability.max(0.0)).sum();
+            if dt_total <= 0.0 {
+                return Err(SyncCronError::Config(format!(
+                    "All datatype probabilities are 0 for category '{}'",
+                    category_name
+                )));
+            }
+            let mut dt_roll = rng.gen::<f64>() * dt_total;
+            let mut dt_picked = &dts[0];
+            for dt in dts {
+                let w = dt.probability.max(0.0);
+                if dt_roll <= w {
+                    dt_picked = dt;
+                    break;
+                }
+                dt_roll -= w;
+            }
+
+            let fe = dt_picked.formats[rng.gen_range(0..dt_picked.formats.len())].clone();
+            log::debug!(
+                "🎯 Selected file profile: category='{}' datatype='{}' format='{}' ext='{}'",
+                category_name,
+                dt_picked.name,
+                fe.format,
+                fe.extension
+            );
+            return Ok((
+                category_name.clone(),
+                dt_picked.name.clone(),
+                fe.format,
+                fe.extension,
+            ));
+        }
 
         // Select a random secondary category or use empty string if none available
         let secondary_category = if category_config.secondary_categories.is_empty() {
@@ -141,18 +334,12 @@ impl AppConfig {
         };
 
         // Select a random file extension
-        if category_config.file_extensions.is_empty() {
-            return Err(SyncCronError::Config(format!(
-                "No file extensions found for primary category '{}'",
-                primary_category
-            )));
-        }
         let file_extension = &category_config.file_extensions
             [rng.gen_range(0..category_config.file_extensions.len())];
 
         log::debug!(
-            "🎯 Selected random categories: Primary='{}', Secondary='{}', Extension='{}'",
-            primary_category,
+            "🎯 Selected legacy profile: category='{}', secondary='{}', ext='{}'",
+            category_name,
             if secondary_category.is_empty() {
                 "<empty>"
             } else {
@@ -161,9 +348,17 @@ impl AppConfig {
             file_extension
         );
 
+        // Legacy mapping:
+        // - datatype = secondary_category (or "default")
+        // - format = "raw"
         Ok((
-            primary_category.clone(),
-            secondary_category,
+            category_name.clone(),
+            if secondary_category.is_empty() {
+                "default".to_string()
+            } else {
+                secondary_category
+            },
+            "raw".to_string(),
             file_extension.clone(),
         ))
     }
@@ -186,6 +381,8 @@ impl AppConfig {
     }
 
     fn load_from_env() -> Result<Self> {
+        let target_chain = env::var("TARGET_CHAIN").unwrap_or_else(|_| "solana".to_string());
+
         let solana_rpc_url = env::var("SOLANA_RPC_URL")
             .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
 
@@ -244,6 +441,70 @@ impl AppConfig {
             .parse::<u32>()
             .map_err(|e| SyncCronError::Config(format!("Invalid max file size bytes: {}", e)))?;
 
+        // EVM/Base config (only required when TARGET_CHAIN=base)
+        let evm_config = if target_chain.to_lowercase() == "base" {
+            let rpc_url = env::var("EVM_RPC_URL")
+                .or_else(|_| env::var("BASE_MAINNET_RPC_URL"))
+                .or_else(|_| env::var("BASE_SEPOLIA_RPC_URL"))
+                .map_err(|_| {
+                    SyncCronError::Config(
+                        "Missing EVM_RPC_URL (or BASE_MAINNET_RPC_URL / BASE_SEPOLIA_RPC_URL)".into(),
+                    )
+                })?;
+
+            let sync_contract_proxy = env::var("EVM_SYNC_CONTRACT_PROXY")
+                .map_err(|_| SyncCronError::Config("Missing EVM_SYNC_CONTRACT_PROXY".into()))?;
+
+            let domain = env::var("EVM_DOMAIN").unwrap_or_else(|_| default_evm_domain());
+
+            let admin_private_key = env::var("EVM_ADMIN_PRIVATE_KEY").ok();
+
+            let agents = env::var("EVM_AGENTS")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_string())
+                .collect::<Vec<String>>();
+
+            let min_user_balance_wei = env::var("EVM_MIN_USER_BALANCE_WEI")
+                .ok()
+                .map(|v| v.parse::<u128>())
+                .transpose()
+                .map_err(|e| SyncCronError::Config(format!("Invalid EVM_MIN_USER_BALANCE_WEI: {}", e)))?
+                .unwrap_or_else(default_min_user_balance_wei);
+
+            let min_agent_balance_wei = env::var("EVM_MIN_AGENT_BALANCE_WEI")
+                .ok()
+                .map(|v| v.parse::<u128>())
+                .transpose()
+                .map_err(|e| SyncCronError::Config(format!("Invalid EVM_MIN_AGENT_BALANCE_WEI: {}", e)))?
+                .unwrap_or_else(default_min_agent_balance_wei);
+
+            let funding_amount_wei = env::var("EVM_FUNDING_AMOUNT_WEI")
+                .ok()
+                .map(|v| v.parse::<u128>())
+                .transpose()
+                .map_err(|e| SyncCronError::Config(format!("Invalid EVM_FUNDING_AMOUNT_WEI: {}", e)))?
+                .unwrap_or_else(default_funding_amount_wei);
+
+            let bridge_script_path = env::var("EVM_BRIDGE_SCRIPT_PATH")
+                .unwrap_or_else(|_| default_evm_bridge_script_path());
+
+            Some(EvmConfig {
+                rpc_url,
+                sync_contract_proxy,
+                domain,
+                admin_private_key,
+                agents,
+                min_user_balance_wei,
+                min_agent_balance_wei,
+                funding_amount_wei,
+                bridge_script_path,
+            })
+        } else {
+            None
+        };
+
         let keypair_file = env::var("KEYPAIR_FILE")
             .unwrap_or_else(|_| "your_keypair_private_key_here".to_string());
 
@@ -280,6 +541,8 @@ impl AppConfig {
         categories_supported.insert(
             "general".to_string(),
             CategoryConfig {
+                probability: 1.0,
+                data_types: vec![],
                 secondary_categories: vec!["misc".to_string()],
                 file_extensions: vec!["txt".to_string()],
             },
@@ -287,7 +550,9 @@ impl AppConfig {
         log::debug!("🏷️ Created default categories: general -> misc (txt)");
 
         Ok(AppConfig {
+            target_chain,
             solana_rpc_url,
+            evm_config,
             database_path,
             min_daily_transactions,
             max_daily_transactions,
@@ -317,6 +582,8 @@ impl AppConfig {
         categories_supported.insert(
             "technology".to_string(),
             CategoryConfig {
+                probability: 1.0,
+                data_types: vec![],
                 secondary_categories: vec![
                     "ai".to_string(),
                     "blockchain".to_string(),
@@ -328,6 +595,8 @@ impl AppConfig {
         categories_supported.insert(
             "science".to_string(),
             CategoryConfig {
+                probability: 1.0,
+                data_types: vec![],
                 secondary_categories: vec![
                     "physics".to_string(),
                     "chemistry".to_string(),
@@ -339,6 +608,8 @@ impl AppConfig {
         categories_supported.insert(
             "business".to_string(),
             CategoryConfig {
+                probability: 1.0,
+                data_types: vec![],
                 secondary_categories: vec![
                     "finance".to_string(),
                     "marketing".to_string(),
@@ -354,7 +625,9 @@ impl AppConfig {
         );
 
         let example_config = AppConfig {
+            target_chain: "solana".to_string(),
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            evm_config: None,
             database_path: "./kv_store".to_string(),
             min_daily_transactions: 100,
             max_daily_transactions: 100,
