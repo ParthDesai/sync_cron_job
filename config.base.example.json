@@ -32,36 +32,562 @@
     "commitment": "confirmed",
     "agents": [],
     "categories_supported": {
-      "technology": {
-        "probability": 0.7,
+      "healthcare": {
+        "probability": 0.15,
         "data_types": [
           {
-            "name": "patientdata",
-            "probability": 0.6,
+            "name": "text",
+            "probability": 0.30,
             "formats": [
-              { "format": "hl7", "extension": "hl7" },
-              { "format": "json", "extension": "json" }
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" },
+              { "format": "txt", "extension": "txt" },
+              { "format": "xml", "extension": "xml" },
+              { "format": "parquet", "extension": "parquet" }
             ]
           },
           {
-            "name": "device",
-            "probability": 0.4,
+            "name": "images",
+            "probability": 0.25,
             "formats": [
-              { "format": "csv", "extension": "csv" },
-              { "format": "json", "extension": "json" }
+              { "format": "jpg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "dicom", "extension": "dcm" },
+              { "format": "tiff", "extension": "tiff" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" },
+              { "format": "avi", "extension": "avi" },
+              { "format": "webm", "extension": "webm" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "searchable", "extension": "pdf" },
+              { "format": "scanned", "extension": "pdf" },
+              { "format": "form", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "xlsx", "extension": "xlsx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "md", "extension": "md" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" },
+              { "format": "m4a", "extension": "m4a" },
+              { "format": "flac", "extension": "flac" }
             ]
           }
         ]
       },
-      "science": {
-        "probability": 0.3,
+      "finance": {
+        "probability": 0.14,
         "data_types": [
           {
-            "name": "research",
-            "probability": 1.0,
+            "name": "text",
+            "probability": 0.30,
             "formats": [
-              { "format": "csv", "extension": "csv" },
-              { "format": "json", "extension": "json" }
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "legal": {
+        "probability": 0.08,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "engineering": {
+        "probability": 0.10,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "logistics": {
+        "probability": 0.08,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "transport": {
+        "probability": 0.07,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "ecommerce": {
+        "probability": 0.12,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "education": {
+        "probability": 0.10,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "manufacturing": {
+        "probability": 0.08,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
+            ]
+          }
+        ]
+      },
+      "travel": {
+        "probability": 0.08,
+        "data_types": [
+          {
+            "name": "text",
+            "probability": 0.30,
+            "formats": [
+              { "format": "plain", "extension": "txt" },
+              { "format": "json", "extension": "json" },
+              { "format": "csv", "extension": "csv" }
+            ]
+          },
+          {
+            "name": "images",
+            "probability": 0.25,
+            "formats": [
+              { "format": "jpeg", "extension": "jpg" },
+              { "format": "png", "extension": "png" },
+              { "format": "webp", "extension": "webp" }
+            ]
+          },
+          {
+            "name": "video",
+            "probability": 0.10,
+            "formats": [
+              { "format": "mp4", "extension": "mp4" },
+              { "format": "mov", "extension": "mov" }
+            ]
+          },
+          {
+            "name": "pdf",
+            "probability": 0.15,
+            "formats": [
+              { "format": "pdf", "extension": "pdf" }
+            ]
+          },
+          {
+            "name": "docs",
+            "probability": 0.12,
+            "formats": [
+              { "format": "docx", "extension": "docx" },
+              { "format": "pptx", "extension": "pptx" },
+              { "format": "xlsx", "extension": "xlsx" }
+            ]
+          },
+          {
+            "name": "audio",
+            "probability": 0.08,
+            "formats": [
+              { "format": "mp3", "extension": "mp3" },
+              { "format": "wav", "extension": "wav" }
             ]
           }
         ]

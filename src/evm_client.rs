@@ -315,7 +315,7 @@ impl EvmClient {
                     "rating": rating,
                     "hasSyntheticDataLink": synthetic_data_link.is_some(),
                     "syntheticDataLink": synthetic_data_link.unwrap_or_default(),
-                    "sendTokensImmediately": false
+                    "sendTokensImmediately": true
                 }),
             )
             .await?;

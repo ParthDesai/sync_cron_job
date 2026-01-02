@@ -130,7 +130,7 @@ impl SolanaClient {
 
         let random_percentage: f64 = rng.gen();
         if random_percentage < high_rating_percentage {
-            (rng.gen_range(60..=100), true)
+            (100, true)
         } else {
             (rng.gen_range(0..=59), false)
         }
