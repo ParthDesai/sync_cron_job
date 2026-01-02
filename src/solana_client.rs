@@ -73,7 +73,7 @@ impl SolanaClient {
         max_file_size_bytes: u32,
     ) -> Result<(String, Vec<u8>)> {
         let synthetic_file_name = seed_file_name.rsplit_once(".").and_then(|(file_name, extension)| {
-            Some(format!("{}_synth.{}", file_name, extension))
+            Some(format!("{}.{}", file_name, extension))
         }).ok_or(SyncCronError::Anyhow(anyhow::Error::msg("unable to parse seed file name")))?;
 
         // Generate random file size between min and max
@@ -108,6 +108,8 @@ impl SolanaClient {
             "{}_{}_{}_{}.{}",
             category, data_type, format, random_id, file_extension
         );
+
+        // finance_pdf_pdf_0Shz2_synth.pdf
 
         // Generate random file size between min and max
         let mut rng = rand::thread_rng();
